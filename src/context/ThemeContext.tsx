@@ -11,14 +11,12 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>('light');
-  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem('theme') as Theme | null;
     const initial = stored || 'light';
     setTheme(initial);
     applyTheme(initial);
-    setMounted(true);
   }, []);
 
   const applyTheme = (t: Theme) => {
