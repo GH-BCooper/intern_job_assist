@@ -51,6 +51,11 @@ export type InterviewDate = {
 
 export type InterviewDateInsert = Omit<InterviewDate, 'id' | 'user_id' | 'created_at'>;
 
+export type ApplicationFiles = {
+  resumeFile?: File | null;
+  coverLetterFile?: File | null;
+};
+
 // File upload helpers
 export async function uploadResumeFile(
   userId: string,

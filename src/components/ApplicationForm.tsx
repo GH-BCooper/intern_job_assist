@@ -1,12 +1,16 @@
 import { useState, useEffect, FormEvent, useRef } from 'react';
 import { X, Loader2, Upload, FileUp, Trash2, Plus } from 'lucide-react';
-import type { Application, ApplicationInsert, InterviewDateInsert, InterviewLearning } from '../lib/supabase';
-import { supabase } from '../lib/supabase';
+import type { Application, ApplicationInsert, InterviewDateInsert, InterviewLearning, ApplicationFiles } from '../lib/supabase';
 import { extractTextFromFile } from '../utils/pdfUtils';
 
 type Props = {
   onClose: () => void;
-  onSave: (data: ApplicationInsert, interviews: InterviewDateInsert[], learnings?: InterviewLearning) => Promise<void>;
+  onSave: (
+    data: ApplicationInsert,
+    interviews: InterviewDateInsert[],
+    learnings?: InterviewLearning,
+    files?: ApplicationFiles
+  ) => Promise<void>;
   initial?: Application | null;
   learnings?: InterviewLearning | null;
 };
@@ -97,14 +101,14 @@ export default function ApplicationForm({ onClose, onSave, initial, learnings: i
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
     fileInput.accept = '.pdf,.txt';
-    fileInput.onchange = async (e: any) => {
-      const file = e.target.files?.[0];
+    fileInput.onchange = async () => {
+      const file = fileInput.files?.[0];
       if (file) {
         try {
           setSaving(true);
           const text = await extractTextFromFile(file);
           set(fieldKey, text);
-        } catch (err) {
+        } catch {
           setError('Failed to extract text from file.');
         } finally {
           setSaving(false);
@@ -143,24 +147,7 @@ export default function ApplicationForm({ onClose, onSave, initial, learnings: i
     setSaving(true);
 
     try {
-      let resumePath = form.resume_path;
-      let coverLetterPath = form.cover_letter_path;
-
-      if (resumeFile && !initial) {
-        const { data, error: err } = await supabase.storage
-          .from('applications')
-          .upload(`resumes/${Date.now()}_${resumeFile.name}`, resumeFile);
-        if (!err && data) resumePath = data.path;
-      }
-
-      if (coverLetterFile && !initial) {
-        const { data, error: err } = await supabase.storage
-          .from('applications')
-          .upload(`cover_letters/${Date.now()}_${coverLetterFile.name}`, coverLetterFile);
-        if (!err && data) coverLetterPath = data.path;
-      }
-
-      const finalForm = { ...form, resume_path: resumePath, cover_letter_path: coverLetterPath };
+      const finalForm = { ...form };
       const finalInterviews = interviews.map(iv => ({
         application_id: iv.application_id,
         interview_date: iv.interview_date,
@@ -177,7 +164,10 @@ export default function ApplicationForm({ onClose, onSave, initial, learnings: i
         updated_at: new Date().toISOString(),
       };
 
-      await onSave(finalForm, finalInterviews, finalLearnings);
+      await onSave(finalForm, finalInterviews, finalLearnings, {
+        resumeFile,
+        coverLetterFile,
+      });
       onClose();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to save.');

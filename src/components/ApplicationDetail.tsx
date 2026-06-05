@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import {
   X, Edit2, Trash2, Loader2, Calendar, Briefcase,
-  CheckCircle, XCircle, Download, ChevronDown, FileText, Eye
+  CheckCircle, XCircle, Download, Eye
 } from 'lucide-react';
 import type { Application, InterviewDate, InterviewLearning } from '../lib/supabase';
-import { supabase, downloadFile } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 import { exportSingleApplicationZip } from '../utils/zipExportUtils';
 
 type Props = {
@@ -60,8 +60,7 @@ export default function ApplicationDetail({ application: app, onClose, onEdit, o
   const [deleting, setDeleting] = useState(false);
   const [interviews, setInterviews] = useState<InterviewDate[]>([]);
   const [learnings, setLearnings] = useState<InterviewLearning | null>(null);
-  const [downloadOpen, setDownloadOpen] = useState(false);
-  const [exporting, setExporting] = useState<'pdf' | 'docx' | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
@@ -89,26 +88,32 @@ export default function ApplicationDetail({ application: app, onClose, onEdit, o
     onClose();
   };
 
-  const handleDownload = async (format: 'pdf' | 'docx') => {
-    setExporting(format);
+  const handleDownload = async () => {
+    setExporting(true);
     try {
-      let resumeBlob: Blob | undefined;
-      let coverLetterBlob: Blob | undefined;
+      const files: {
+        resume?: Blob;
+        coverLetter?: Blob;
+        resumeName?: string;
+        coverLetterName?: string;
+      } = {
+        resumeName: app.resume_used || undefined,
+        coverLetterName: app.cover_letter_used || undefined,
+      };
 
       if (app.resume_path) {
-        const { data } = supabase.storage.from('applications').getPublicUrl(app.resume_path);
-        if (data?.publicUrl) resumeBlob = await downloadFile(data.publicUrl) || undefined;
+        const { data } = await supabase.storage.from('applications').download(app.resume_path);
+        if (data) files.resume = data;
       }
 
       if (app.cover_letter_path) {
-        const { data } = supabase.storage.from('applications').getPublicUrl(app.cover_letter_path);
-        if (data?.publicUrl) coverLetterBlob = await downloadFile(data.publicUrl) || undefined;
+        const { data } = await supabase.storage.from('applications').download(app.cover_letter_path);
+        if (data) files.coverLetter = data;
       }
 
-      await exportSingleApplicationZip(app, interviews, resumeBlob, coverLetterBlob, format);
+      await exportSingleApplicationZip(app, interviews, learnings, files);
     } finally {
-      setExporting(null);
-      setDownloadOpen(false);
+      setExporting(false);
     }
   };
 
@@ -249,39 +254,15 @@ export default function ApplicationDetail({ application: app, onClose, onEdit, o
 
         {/* Footer */}
         <div className="px-6 py-4 border-t border-light-300 dark:border-dark-600 flex-shrink-0">
-          {/* Download row */}
-          <div className="relative mb-3">
+          <div className="mb-3">
             <button
-              onClick={() => setDownloadOpen(v => !v)}
-              disabled={exporting !== null}
+              onClick={handleDownload}
+              disabled={exporting}
               className="btn-secondary w-full justify-center"
             >
-              {exporting ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <Download size={14} />
-              )}
-              Download Application
-              <ChevronDown size={13} className={`transition-transform ${downloadOpen ? 'rotate-180' : ''}`} />
+              {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+              Download ZIP
             </button>
-
-            {downloadOpen && (
-              <div className="absolute left-0 right-0 bottom-full mb-2 bg-light-100 dark:bg-dark-900 border border-light-300 dark:border-dark-600 rounded-lg shadow-lg overflow-hidden z-40">
-                <button
-                  onClick={() => handleDownload('pdf')}
-                  className="w-full text-left px-4 py-2 text-sm text-light-900 dark:text-slate-300 hover:bg-light-200 dark:hover:bg-dark-700 transition-colors font-medium"
-                >
-                  Download as PDF (ZIP)
-                </button>
-                <div className="border-t border-light-300 dark:border-dark-600" />
-                <button
-                  onClick={() => handleDownload('docx')}
-                  className="w-full text-left px-4 py-2 text-sm text-light-900 dark:text-slate-300 hover:bg-light-200 dark:hover:bg-dark-700 transition-colors font-medium"
-                >
-                  Download as Word (ZIP)
-                </button>
-              </div>
-            )}
           </div>
 
           {/* Actions row */}

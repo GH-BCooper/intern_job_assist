@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { ChevronDown, FileText, FileDown, Loader2, Download } from 'lucide-react';
-import type { Application, InterviewDate } from '../lib/supabase';
-import { supabase, downloadFile } from '../lib/supabase';
+import type { Application, InterviewDate, InterviewLearning } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 import { exportAllApplicationsZip } from '../utils/zipExportUtils';
 
 type Props = {
@@ -12,7 +12,6 @@ export default function PrintAllButton({ applications }: Props) {
   const [open, setOpen] = useState(false);
   const [loadingPdf, setLoadingPdf] = useState(false);
   const [loadingDocx, setLoadingDocx] = useState(false);
-  const [interviewsMap, setInterviewsMap] = useState<Record<string, InterviewDate[]>>({});
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -42,30 +41,63 @@ export default function PrintAllButton({ applications }: Props) {
     return map;
   };
 
+  const loadAllLearnings = async () => {
+    if (!applications.length) return {};
+
+    const appIds = applications.map(a => a.id);
+    const { data } = await supabase
+      .from('interview_learnings')
+      .select('*')
+      .in('application_id', appIds);
+
+    const map: Record<string, InterviewLearning> = {};
+    (data || []).forEach(item => {
+      map[item.application_id] = item;
+    });
+
+    return map;
+  };
+
+  const loadAllFiles = async () => {
+    const fileMap: Record<string, {
+      resume?: Blob;
+      coverLetter?: Blob;
+      resumeName?: string;
+      coverLetterName?: string;
+    }> = {};
+
+    for (const app of applications) {
+      fileMap[app.id] = {
+        resumeName: app.resume_used || undefined,
+        coverLetterName: app.cover_letter_used || undefined,
+      };
+
+      if (app.resume_path) {
+        const { data } = await supabase.storage.from('applications').download(app.resume_path);
+        if (data) {
+          fileMap[app.id].resume = data;
+        }
+      }
+
+      if (app.cover_letter_path) {
+        const { data } = await supabase.storage.from('applications').download(app.cover_letter_path);
+        if (data) {
+          fileMap[app.id].coverLetter = data;
+        }
+      }
+    }
+
+    return fileMap;
+  };
+
   const handlePDF = async () => {
     setOpen(false);
     setLoadingPdf(true);
     try {
       const interviews = await loadAllInterviews();
-      const fileMap: Record<string, { resume?: Blob; coverLetter?: Blob }> = {};
-
-      for (const app of applications) {
-        fileMap[app.id] = {};
-        if (app.resume_path) {
-          const { data } = supabase.storage.from('applications').getPublicUrl(app.resume_path);
-          if (data?.publicUrl) {
-            fileMap[app.id].resume = await downloadFile(data.publicUrl) || undefined;
-          }
-        }
-        if (app.cover_letter_path) {
-          const { data } = supabase.storage.from('applications').getPublicUrl(app.cover_letter_path);
-          if (data?.publicUrl) {
-            fileMap[app.id].coverLetter = await downloadFile(data.publicUrl) || undefined;
-          }
-        }
-      }
-
-      await exportAllApplicationsZip(applications, interviews, fileMap, 'pdf');
+      const learnings = await loadAllLearnings();
+      const fileMap = await loadAllFiles();
+      await exportAllApplicationsZip(applications, interviews, learnings, fileMap, 'pdf');
     } finally {
       setLoadingPdf(false);
     }
@@ -76,25 +108,9 @@ export default function PrintAllButton({ applications }: Props) {
     setLoadingDocx(true);
     try {
       const interviews = await loadAllInterviews();
-      const fileMap: Record<string, { resume?: Blob; coverLetter?: Blob }> = {};
-
-      for (const app of applications) {
-        fileMap[app.id] = {};
-        if (app.resume_path) {
-          const { data } = supabase.storage.from('applications').getPublicUrl(app.resume_path);
-          if (data?.publicUrl) {
-            fileMap[app.id].resume = await downloadFile(data.publicUrl) || undefined;
-          }
-        }
-        if (app.cover_letter_path) {
-          const { data } = supabase.storage.from('applications').getPublicUrl(app.cover_letter_path);
-          if (data?.publicUrl) {
-            fileMap[app.id].coverLetter = await downloadFile(data.publicUrl) || undefined;
-          }
-        }
-      }
-
-      await exportAllApplicationsZip(applications, interviews, fileMap, 'docx');
+      const learnings = await loadAllLearnings();
+      const fileMap = await loadAllFiles();
+      await exportAllApplicationsZip(applications, interviews, learnings, fileMap, 'docx');
     } finally {
       setLoadingDocx(false);
     }

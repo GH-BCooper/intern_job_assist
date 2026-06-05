@@ -1,9 +1,9 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Search, SlidersHorizontal, Loader2, Briefcase, RefreshCw, ArrowUpDown } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../lib/supabase';
-import type { Application, ApplicationInsert, InterviewDate, InterviewDateInsert, InterviewLearning } from '../lib/supabase';
+import { supabase, uploadResumeFile, uploadCoverLetterFile } from '../lib/supabase';
+import type { Application, ApplicationInsert, InterviewDate, InterviewDateInsert, InterviewLearning, ApplicationFiles } from '../lib/supabase';
 import ApplicationCard from '../components/ApplicationCard';
 import ApplicationForm from '../components/ApplicationForm';
 import ApplicationDetail from '../components/ApplicationDetail';
@@ -25,8 +25,41 @@ const SORT_OPTIONS = [
   { value: 'interview_furthest', label: 'Interview Date: Furthest First' },
 ];
 
+function getTimestamp(value?: string | null) {
+  if (!value) return 0;
+  const timestamp = new Date(value).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function sortApplicationsByDate(applications: Application[]) {
+  return [...applications].sort(
+    (a, b) =>
+      getTimestamp(b.created_at || b.date_applied) - getTimestamp(a.created_at || a.date_applied)
+  );
+}
+
+function sortInterviewDates(dates: InterviewDate[]) {
+  return [...dates].sort((a, b) => getTimestamp(a.interview_date) - getTimestamp(b.interview_date));
+}
+
+function isAuthError(message: string) {
+  return /unauthoriz|forbidden|jwt|session/i.test(message);
+}
+
+function getSupabaseErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+
+  if (error && typeof error === 'object') {
+    const message = 'message' in error && typeof error.message === 'string' ? error.message : '';
+    const hint = 'hint' in error && typeof error.hint === 'string' ? error.hint : '';
+    return [message, hint].filter(Boolean).join(' ');
+  }
+
+  return 'Failed to load applications. Please try again.';
+}
+
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const navigate = useNavigate();
 
   const [applications, setApplications] = useState<Application[]>([]);
@@ -43,47 +76,68 @@ export default function Dashboard() {
   const [editLearnings, setEditLearnings] = useState<InterviewLearning | null>(null);
   const [detailApp, setDetailApp] = useState<Application | null>(null);
 
-  useEffect(() => {
-    if (!user) { navigate('/login'); return; }
-    fetchApplications();
-  }, [user]);
+  const fetchAllInterviews = useCallback(async (appIds: string[]) => {
+    try {
+      const { data } = await supabase
+        .from('interview_dates')
+        .select('*')
+        .in('application_id', appIds);
 
-  const fetchApplications = async () => {
+      const map: Record<string, InterviewDate[]> = {};
+      (data || []).forEach(iv => {
+        if (!map[iv.application_id]) map[iv.application_id] = [];
+        map[iv.application_id].push(iv);
+      });
+
+      Object.keys(map).forEach(key => {
+        map[key] = sortInterviewDates(map[key]);
+      });
+
+      setInterviewsMap(map);
+    } catch {
+      // Keep the dashboard usable even if interview dates fail to load.
+      setInterviewsMap({});
+    }
+  }, []);
+
+  const fetchApplications = useCallback(async () => {
     setLoading(true);
     setError('');
-    const { data, error: err } = await supabase
-      .from('applications')
-      .select('*')
-      .order('created_at', { ascending: false });
+    try {
+      const { data, error: err } = await supabase
+        .from('applications')
+        .select('*');
 
-    if (err) {
-      setError('Failed to load applications. Please try again.');
-    } else {
-      setApplications(data ?? []);
-      if (data?.length) {
-        await fetchAllInterviews(data.map(d => d.id));
+      if (err) throw err;
+
+      const sortedApplications = sortApplicationsByDate(data ?? []);
+      setApplications(sortedApplications);
+
+      if (sortedApplications.length) {
+        await fetchAllInterviews(sortedApplications.map(d => d.id));
       }
+    } catch (err) {
+      const message = getSupabaseErrorMessage(err);
+
+      if (isAuthError(message)) {
+        await signOut();
+        navigate('/login', { replace: true });
+        return;
+      }
+
+      setError(message);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  };
+  }, [fetchAllInterviews, navigate, signOut]);
 
-  const fetchAllInterviews = async (appIds: string[]) => {
-    const { data } = await supabase
-      .from('interview_dates')
-      .select('*')
-      .in('application_id', appIds)
-      .order('interview_date', { ascending: true });
-
-    const map: Record<string, InterviewDate[]> = {};
-    (data || []).forEach(iv => {
-      if (!map[iv.application_id]) map[iv.application_id] = [];
-      map[iv.application_id].push(iv);
-    });
-    setInterviewsMap(map);
-  };
+  useEffect(() => {
+    if (!user) { navigate('/login'); return; }
+    void fetchApplications();
+  }, [user, navigate, fetchApplications]);
 
   const filtered = useMemo(() => {
-    let result = applications.filter(app => {
+    const result = applications.filter(app => {
       const matchSearch = app.company_name.toLowerCase().includes(search.toLowerCase());
       const matchStatus = !statusFilter || app.response_status === statusFilter;
       return matchSearch && matchStatus;
@@ -124,10 +178,37 @@ export default function Dashboard() {
     return result;
   }, [applications, search, statusFilter, sortBy, interviewsMap]);
 
-  const handleCreate = async (data: ApplicationInsert, interviews: InterviewDateInsert[], learnings?: InterviewLearning) => {
+  const handleCreate = async (
+    data: ApplicationInsert,
+    interviews: InterviewDateInsert[],
+    learnings?: InterviewLearning,
+    files?: ApplicationFiles
+  ) => {
+    const applicationId = crypto.randomUUID();
+    let resumePath = data.resume_path;
+    let coverLetterPath = data.cover_letter_path;
+
+    if (files?.resumeFile) {
+      const uploadedResumePath = await uploadResumeFile(user!.id, applicationId, files.resumeFile);
+      if (!uploadedResumePath) throw new Error('Failed to upload the resume file.');
+      resumePath = uploadedResumePath;
+    }
+
+    if (files?.coverLetterFile) {
+      const uploadedCoverLetterPath = await uploadCoverLetterFile(user!.id, applicationId, files.coverLetterFile);
+      if (!uploadedCoverLetterPath) throw new Error('Failed to upload the cover letter file.');
+      coverLetterPath = uploadedCoverLetterPath;
+    }
+
     const { data: created, error: err } = await supabase
       .from('applications')
-      .insert([{ ...data, user_id: user!.id }])
+      .insert([{
+        ...data,
+        id: applicationId,
+        user_id: user!.id,
+        resume_path: resumePath,
+        cover_letter_path: coverLetterPath,
+      }])
       .select()
       .single();
 
@@ -162,11 +243,36 @@ export default function Dashboard() {
     }
   };
 
-  const handleUpdate = async (data: ApplicationInsert, interviews: InterviewDateInsert[], learnings?: InterviewLearning) => {
+  const handleUpdate = async (
+    data: ApplicationInsert,
+    interviews: InterviewDateInsert[],
+    learnings?: InterviewLearning,
+    files?: ApplicationFiles
+  ) => {
     if (!editApp) return;
+    let resumePath = data.resume_path;
+    let coverLetterPath = data.cover_letter_path;
+
+    if (files?.resumeFile) {
+      const uploadedResumePath = await uploadResumeFile(user!.id, editApp.id, files.resumeFile);
+      if (!uploadedResumePath) throw new Error('Failed to upload the resume file.');
+      resumePath = uploadedResumePath;
+    }
+
+    if (files?.coverLetterFile) {
+      const uploadedCoverLetterPath = await uploadCoverLetterFile(user!.id, editApp.id, files.coverLetterFile);
+      if (!uploadedCoverLetterPath) throw new Error('Failed to upload the cover letter file.');
+      coverLetterPath = uploadedCoverLetterPath;
+    }
+
     const { data: updated, error: err } = await supabase
       .from('applications')
-      .update({ ...data, updated_at: new Date().toISOString() })
+      .update({
+        ...data,
+        resume_path: resumePath,
+        cover_letter_path: coverLetterPath,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', editApp.id)
       .select()
       .single();

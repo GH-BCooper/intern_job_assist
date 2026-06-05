@@ -6,7 +6,7 @@ type AuthContextType = {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  signUp: (email: string, password: string, name: string) => Promise<{ error: string | null }>;
+  signUp: (email: string, password: string, name: string) => Promise<{ error: string | null; sessionCreated: boolean }>;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signInWithGoogle: () => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
@@ -44,8 +44,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const signUp = async (email: string, password: string, name: string): Promise<{ error: string | null }> => {
-    const { error } = await supabase.auth.signUp({
+  const signUp = async (email: string, password: string, name: string): Promise<{ error: string | null; sessionCreated: boolean }> => {
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: { data: { name } },
@@ -54,9 +54,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (error.message.includes('already registered') || error.message.includes('already exists')) {
         return { error: 'An account with this email already exists.' };
       }
-      return { error: error.message };
+      return { error: error.message, sessionCreated: false };
     }
-    return { error: null };
+    return { error: null, sessionCreated: !!data.session };
   };
 
   const signIn = async (email: string, password: string): Promise<{ error: string | null }> => {
