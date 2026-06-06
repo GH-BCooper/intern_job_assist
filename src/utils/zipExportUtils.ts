@@ -9,6 +9,7 @@ import {
   BorderStyle,
   Packer,
   SectionType,
+  Footer,
 } from "docx";
 import type {
   Application,
@@ -112,8 +113,22 @@ function buildPDF(
 ): jsPDF {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
   const margin = 20;
   const contentW = pageW - margin * 2;
+  const footerY = pageH - 12;
+
+  const addFooter = () => {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(180, 180, 180);
+    doc.text(
+      `© ${new Date().getFullYear()} Made with love by Brett Cooper`,
+      pageW / 2,
+      footerY,
+      { align: 'center' }
+    );
+  };
 
   apps.forEach((app, idx) => {
     if (idx > 0) doc.addPage();
@@ -147,7 +162,8 @@ function buildPDF(
     );
 
     fields.forEach(({ label, value }) => {
-      if (y > 265) {
+      if (y > 260) {
+        addFooter();
         doc.addPage();
         y = 20;
       }
@@ -171,19 +187,7 @@ function buildPDF(
       doc.line(margin, y - 3, pageW - margin, y - 3);
     });
 
-    // Add footer
-    if (y > 270) {
-      doc.addPage();
-    }
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.setTextColor(148, 163, 184);
-    doc.text(
-      `© ${new Date().getFullYear()} Made with ❤️ by Brett Cooper`,
-      pageW / 2,
-      doc.internal.pageSize.getHeight() - 10,
-      { align: 'center' }
-    );
+    addFooter();
   });
 
   return doc;
@@ -231,28 +235,6 @@ function appDocxSections(
     );
   });
 
-  // Add footer
-  children.push(
-    new Paragraph({
-      text: '',
-      spacing: { before: 400 },
-      border: {
-        top: { style: BorderStyle.SINGLE, size: 1, color: "E2E8F0" },
-      },
-    }),
-    new Paragraph({
-      children: [
-        new TextRun({
-          text: `© ${new Date().getFullYear()} Made with ❤️ by Brett Cooper`,
-          color: "94A3B8",
-          size: 16,
-        }),
-      ],
-      spacing: { before: 200 },
-      alignment: 'center',
-    })
-  );
-
   return children;
 }
 
@@ -269,7 +251,25 @@ async function buildDocxBlob(
     },
     sections: [
       {
-        properties: { type: SectionType.CONTINUOUS },
+        properties: {
+          type: SectionType.CONTINUOUS,
+          footers: {
+            default: new Footer({
+              children: [
+                new Paragraph({
+                  children: [
+                    new TextRun({
+                      text: `© ${new Date().getFullYear()} Made with love by Brett Cooper`,
+                      color: "94A3B8",
+                      size: 16,
+                    }),
+                  ],
+                  alignment: 'center',
+                }),
+              ],
+            }),
+          },
+        },
         children: appDocxSections(app, interviews, learnings),
       },
     ],
