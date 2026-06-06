@@ -1,6 +1,6 @@
-import JSZip from 'jszip';
-import { saveAs } from 'file-saver';
-import jsPDF from 'jspdf';
+import JSZip from "jszip";
+import { saveAs } from "file-saver";
+import jsPDF from "jspdf";
 import {
   Document,
   Paragraph,
@@ -9,8 +9,12 @@ import {
   BorderStyle,
   Packer,
   SectionType,
-} from 'docx';
-import type { Application, InterviewDate, InterviewLearning } from '../lib/supabase';
+} from "docx";
+import type {
+  Application,
+  InterviewDate,
+  InterviewLearning,
+} from "../lib/supabase";
 
 type LearningsMap = Record<string, InterviewLearning | null | undefined>;
 
@@ -22,72 +26,91 @@ type FileMapEntry = {
 };
 
 function formatDate(d: string | null): string {
-  if (!d) return '-';
+  if (!d) return "-";
   try {
-    return new Date(d).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
+    return new Date(d).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
     });
   } catch {
     return d;
   }
 }
 
-function sanitizeFileName(value: string, fallback = 'file'): string {
-  const cleaned = value.trim().replace(/[/\\?%*:|"<>]/g, '_');
+function sanitizeFileName(value: string, fallback = "file"): string {
+  const cleaned = value.trim().replace(/[/\\?%*:|"<>]/g, "_");
   return cleaned || fallback;
 }
 
-function attachmentName(preferredName: string | undefined, fallbackName: string): string {
+function attachmentName(
+  preferredName: string | undefined,
+  fallbackName: string,
+): string {
   return sanitizeFileName(preferredName || fallbackName, fallbackName);
 }
 
 function docTextRuns(value: string): TextRun[] {
-  return value.split('\n').map((line, index) => new TextRun({
-    text: line || ' ',
-    break: index === 0 ? 0 : 1,
-    size: 22,
-    color: '1E293B',
-  }));
+  return value.split("\n").map(
+    (line, index) =>
+      new TextRun({
+        text: line || " ",
+        break: index === 0 ? 0 : 1,
+        size: 22,
+        color: "1E293B",
+      }),
+  );
 }
 
 function appFields(
   app: Application,
   interviews: InterviewDate[] = [],
-  learnings?: InterviewLearning | null
+  learnings?: InterviewLearning | null,
 ): Array<{ label: string; value: string }> {
   const interviewText = [...interviews]
-    .sort((a, b) => new Date(a.interview_date).getTime() - new Date(b.interview_date).getTime())
-    .map(iv => `${iv.label}: ${formatDate(iv.interview_date)}`)
-    .join('\n');
+    .sort(
+      (a, b) =>
+        new Date(a.interview_date).getTime() -
+        new Date(b.interview_date).getTime(),
+    )
+    .map((iv) => `${iv.label}: ${formatDate(iv.interview_date)}`)
+    .join("\n");
 
   return [
-    { label: 'Company', value: app.company_name || '-' },
-    { label: 'Role Applied To', value: app.role_applied_to || '-' },
-    { label: 'Platform Applied On', value: app.platform_applied_on || '-' },
-    { label: 'Response Status', value: app.response_status || '-' },
-    { label: 'Final Status', value: app.final_status || '-' },
-    { label: 'Date Applied', value: formatDate(app.date_applied) },
-    { label: 'Interview Offered', value: app.interview_offered ? 'Yes' : 'No' },
-    ...(interviewText ? [{ label: 'Interview Dates', value: interviewText }] : []),
-    { label: 'Resume Used', value: app.resume_used || '-' },
-    { label: 'Cover Letter Used', value: app.cover_letter_used || '-' },
-    { label: 'Company Description', value: app.company_description || '-' },
-    { label: 'Salary Info / Questions to Ask', value: app.salary_info || '-' },
-    { label: 'Interview Questions', value: app.interview_questions || '-' },
-    { label: 'Tasks to Complete / Learn for Interview', value: app.tasks_to_complete || '-' },
-    ...(learnings?.learnings ? [{ label: 'Interview Learnings', value: learnings.learnings }] : []),
-    ...(learnings?.questions_asked ? [{ label: 'Questions Asked', value: learnings.questions_asked }] : []),
+    { label: "Company", value: app.company_name || "-" },
+    { label: "Role Applied To", value: app.role_applied_to || "-" },
+    { label: "Platform Applied On", value: app.platform_applied_on || "-" },
+    { label: "Response Status", value: app.response_status || "-" },
+    { label: "Final Status", value: app.final_status || "-" },
+    { label: "Date Applied", value: formatDate(app.date_applied) },
+    { label: "Interview Offered", value: app.interview_offered ? "Yes" : "No" },
+    ...(interviewText
+      ? [{ label: "Interview Dates", value: interviewText }]
+      : []),
+    { label: "Resume Used", value: app.resume_used || "-" },
+    { label: "Cover Letter Used", value: app.cover_letter_used || "-" },
+    { label: "Company Description", value: app.company_description || "-" },
+    { label: "Salary Info / Questions to Ask", value: app.salary_info || "-" },
+    { label: "Interview Questions", value: app.interview_questions || "-" },
+    {
+      label: "Tasks to Complete / Learn for Interview",
+      value: app.tasks_to_complete || "-",
+    },
+    ...(learnings?.learnings
+      ? [{ label: "Interview Learnings", value: learnings.learnings }]
+      : []),
+    ...(learnings?.questions_asked
+      ? [{ label: "Questions Asked", value: learnings.questions_asked }]
+      : []),
   ];
 }
 
 function buildPDF(
   apps: Application[],
   interviewsMap: Record<string, InterviewDate[]> = {},
-  learningsMap: LearningsMap = {}
+  learningsMap: LearningsMap = {},
 ): jsPDF {
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
   const margin = 20;
   const contentW = pageW - margin * 2;
@@ -96,12 +119,12 @@ function buildPDF(
     if (idx > 0) doc.addPage();
 
     doc.setFillColor(13, 27, 46);
-    doc.rect(0, 0, pageW, 40, 'F');
+    doc.rect(0, 0, pageW, 40, "F");
 
-    doc.setFont('helvetica', 'bold');
+    doc.setFont("helvetica", "bold");
     doc.setFontSize(18);
     doc.setTextColor(34, 197, 94);
-    doc.text('InternTrack', margin, 16);
+    doc.text("InternTrack", margin, 16);
 
     doc.setFontSize(13);
     doc.setTextColor(248, 250, 252);
@@ -109,10 +132,19 @@ function buildPDF(
 
     doc.setFontSize(9);
     doc.setTextColor(148, 163, 184);
-    doc.text(`Exported ${new Date().toLocaleDateString()}`, pageW - margin, 28, { align: 'right' });
+    doc.text(
+      `Exported ${new Date().toLocaleDateString()}`,
+      pageW - margin,
+      28,
+      { align: "right" },
+    );
 
     let y = 52;
-    const fields = appFields(app, interviewsMap[app.id] || [], learningsMap[app.id]);
+    const fields = appFields(
+      app,
+      interviewsMap[app.id] || [],
+      learningsMap[app.id],
+    );
 
     fields.forEach(({ label, value }) => {
       if (y > 265) {
@@ -120,13 +152,13 @@ function buildPDF(
         y = 20;
       }
 
-      doc.setFont('helvetica', 'bold');
+      doc.setFont("helvetica", "bold");
       doc.setFontSize(8);
       doc.setTextColor(100, 116, 139);
       doc.text(label.toUpperCase(), margin, y);
       y += 5;
 
-      doc.setFont('helvetica', 'normal');
+      doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
       doc.setTextColor(30, 41, 59);
 
@@ -146,7 +178,7 @@ function buildPDF(
 function appDocxSections(
   app: Application,
   interviews: InterviewDate[] = [],
-  learnings?: InterviewLearning | null
+  learnings?: InterviewLearning | null,
 ) {
   const fields = appFields(app, interviews, learnings);
   const children: Paragraph[] = [
@@ -159,7 +191,7 @@ function appDocxSections(
       children: [
         new TextRun({
           text: `Exported: ${new Date().toLocaleDateString()}`,
-          color: '94A3B8',
+          color: "94A3B8",
           size: 18,
         }),
       ],
@@ -170,16 +202,18 @@ function appDocxSections(
   fields.forEach(({ label, value }) => {
     children.push(
       new Paragraph({
-        children: [new TextRun({ text: label, bold: true, size: 20, color: '334155' })],
+        children: [
+          new TextRun({ text: label, bold: true, size: 20, color: "334155" }),
+        ],
         spacing: { before: 200, after: 60 },
         border: {
-          bottom: { style: BorderStyle.SINGLE, size: 1, color: 'E2E8F0' },
+          bottom: { style: BorderStyle.SINGLE, size: 1, color: "E2E8F0" },
         },
       }),
       new Paragraph({
         children: docTextRuns(value),
         spacing: { after: 240 },
-      })
+      }),
     );
   });
 
@@ -189,12 +223,12 @@ function appDocxSections(
 async function buildDocxBlob(
   app: Application,
   interviews: InterviewDate[] = [],
-  learnings?: InterviewLearning | null
+  learnings?: InterviewLearning | null,
 ) {
   const doc = new Document({
     styles: {
       default: {
-        document: { run: { font: 'Calibri', size: 22 } },
+        document: { run: { font: "Calibri", size: 22 } },
       },
     },
     sections: [
@@ -210,10 +244,13 @@ async function buildDocxBlob(
 
 function addAttachmentFiles(zip: JSZip, files: FileMapEntry = {}) {
   if (files.resume) {
-    zip.file(attachmentName(files.resumeName, 'resume.pdf'), files.resume);
+    zip.file(attachmentName(files.resumeName, "resume.pdf"), files.resume);
   }
   if (files.coverLetter) {
-    zip.file(attachmentName(files.coverLetterName, 'cover_letter.pdf'), files.coverLetter);
+    zip.file(
+      attachmentName(files.coverLetterName, "cover_letter.pdf"),
+      files.coverLetter,
+    );
   }
 }
 
@@ -221,12 +258,16 @@ export async function exportSingleApplicationZip(
   app: Application,
   interviews: InterviewDate[] = [],
   learnings?: InterviewLearning | null,
-  files: FileMapEntry = {}
+  files: FileMapEntry = {},
 ): Promise<void> {
   const zip = new JSZip();
-  const companyName = sanitizeFileName(app.company_name, 'application');
+  const companyName = sanitizeFileName(app.company_name, "application");
 
-  const pdfBlob = buildPDF([app], { [app.id]: interviews }, { [app.id]: learnings }).output('blob');
+  const pdfBlob = buildPDF(
+    [app],
+    { [app.id]: interviews },
+    { [app.id]: learnings },
+  ).output("blob");
   zip.file(`${companyName}_application.pdf`, pdfBlob);
 
   const docxBlob = await buildDocxBlob(app, interviews, learnings);
@@ -234,7 +275,7 @@ export async function exportSingleApplicationZip(
 
   addAttachmentFiles(zip, files);
 
-  const zipBlob = await zip.generateAsync({ type: 'blob' });
+  const zipBlob = await zip.generateAsync({ type: "blob" });
   saveAs(zipBlob, `${companyName}_application.zip`);
 }
 
@@ -243,20 +284,24 @@ export async function exportAllApplicationsZip(
   interviewsMap: Record<string, InterviewDate[]> = {},
   learningsMap: LearningsMap = {},
   fileMap: Record<string, FileMapEntry> = {},
-  format: 'pdf' | 'docx' = 'pdf'
+  format: "pdf" | "docx" = "pdf",
 ): Promise<void> {
   if (!apps.length) return;
 
   const zip = new JSZip();
 
   for (const app of apps) {
-    const companyName = sanitizeFileName(app.company_name, 'application');
+    const companyName = sanitizeFileName(app.company_name, "application");
     const companyFolder = zip.folder(companyName) || zip;
     const interviews = interviewsMap[app.id] || [];
     const learnings = learningsMap[app.id];
 
-    if (format === 'pdf') {
-      const pdfBlob = buildPDF([app], { [app.id]: interviews }, { [app.id]: learnings }).output('blob');
+    if (format === "pdf") {
+      const pdfBlob = buildPDF(
+        [app],
+        { [app.id]: interviews },
+        { [app.id]: learnings },
+      ).output("blob");
       companyFolder.file(`${companyName}_application.pdf`, pdfBlob);
     } else {
       const docxBlob = await buildDocxBlob(app, interviews, learnings);
@@ -266,6 +311,6 @@ export async function exportAllApplicationsZip(
     addAttachmentFiles(companyFolder, fileMap[app.id]);
   }
 
-  const zipBlob = await zip.generateAsync({ type: 'blob' });
-  saveAs(zipBlob, 'all_applications.zip');
+  const zipBlob = await zip.generateAsync({ type: "blob" });
+  saveAs(zipBlob, "all_applications.zip");
 }
