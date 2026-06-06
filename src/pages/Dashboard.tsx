@@ -69,6 +69,7 @@ export default function Dashboard() {
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [platformFilter, setPlatformFilter] = useState('');
   const [sortBy, setSortBy] = useState('recent');
 
   const [showForm, setShowForm] = useState(false);
@@ -140,7 +141,8 @@ export default function Dashboard() {
     const result = applications.filter(app => {
       const matchSearch = app.company_name.toLowerCase().includes(search.toLowerCase());
       const matchStatus = !statusFilter || app.response_status === statusFilter;
-      return matchSearch && matchStatus;
+      const matchPlatform = !platformFilter || app.platform_applied_on === platformFilter;
+      return matchSearch && matchStatus && matchPlatform;
     });
 
     if (sortBy === 'recent') {
@@ -176,7 +178,7 @@ export default function Dashboard() {
     }
 
     return result;
-  }, [applications, search, statusFilter, sortBy, interviewsMap]);
+  }, [applications, search, statusFilter, platformFilter, sortBy, interviewsMap]);
 
   const handleCreate = async (
     data: ApplicationInsert,
@@ -429,6 +431,22 @@ export default function Dashboard() {
                 {STATUS_OPTIONS.map(o => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
+              </select>
+            </div>
+
+            <div className="relative">
+              <Briefcase size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-light-500 dark:text-slate-500 pointer-events-none" />
+              <select
+                className="input-field pl-9 pr-4 appearance-none min-w-[160px]"
+                value={platformFilter}
+                onChange={e => setPlatformFilter(e.target.value)}
+              >
+                <option value="">All Platforms</option>
+                {[...new Set(applications.map(a => a.platform_applied_on).filter(Boolean))]
+                  .sort()
+                  .map(platform => (
+                    <option key={platform} value={platform}>{platform}</option>
+                  ))}
               </select>
             </div>
 

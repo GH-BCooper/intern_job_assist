@@ -224,6 +224,7 @@ export default function ApplicationDetail({ application: app, onClose, onEdit, o
           {/* Fields */}
           <div className="grid grid-cols-1 gap-5">
             <Field label="Role Applied To" value={app.role_applied_to} />
+            <Field label="Platform Applied On" value={app.platform_applied_on} />
             <Field label="Resume Used" value={app.resume_used} />
             <Field label="Cover Letter Used" value={app.cover_letter_used} />
             <Field label="Company Description" value={app.company_description} />
