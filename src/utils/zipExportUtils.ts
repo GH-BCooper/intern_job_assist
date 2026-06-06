@@ -236,6 +236,27 @@ function appDocxSections(
     );
   });
 
+  // Add footer
+  children.push(
+    new Paragraph({
+      text: "",
+      spacing: { before: 400 },
+      border: {
+        top: { style: BorderStyle.SINGLE, size: 1, color: "E2E8F0" },
+      },
+    }),
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: `© ${new Date().getFullYear()} Made with love by Brett Cooper`,
+          size: 18,
+        }),
+      ],
+      spacing: { before: 200 },
+      alignment: AlignmentType.CENTER,
+    }),
+  );
+
   return children;
 }
 
@@ -254,22 +275,6 @@ async function buildDocxBlob(
       {
         properties: {
           type: SectionType.CONTINUOUS,
-          footers: {
-            default: new Footer({
-              children: [
-                new Paragraph({
-                  children: [
-                    new TextRun({
-                      text: `© ${new Date().getFullYear()} Made with love by Brett Cooper`,
-                      size: 18,
-                    }),
-                  ],
-                  alignment: AlignmentType.CENTER,
-                  spacing: { before: 100 },
-                }),
-              ],
-            }),
-          },
         },
         children: appDocxSections(app, interviews, learnings),
       },
