@@ -170,6 +170,20 @@ function buildPDF(
       doc.setLineWidth(0.3);
       doc.line(margin, y - 3, pageW - margin, y - 3);
     });
+
+    // Add footer
+    if (y > 270) {
+      doc.addPage();
+    }
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(148, 163, 184);
+    doc.text(
+      `© ${new Date().getFullYear()} Made with ❤️ by Brett Cooper`,
+      pageW / 2,
+      doc.internal.pageSize.getHeight() - 10,
+      { align: 'center' }
+    );
   });
 
   return doc;
@@ -216,6 +230,28 @@ function appDocxSections(
       }),
     );
   });
+
+  // Add footer
+  children.push(
+    new Paragraph({
+      text: '',
+      spacing: { before: 400 },
+      border: {
+        top: { style: BorderStyle.SINGLE, size: 1, color: "E2E8F0" },
+      },
+    }),
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: `© ${new Date().getFullYear()} Made with ❤️ by Brett Cooper`,
+          color: "94A3B8",
+          size: 16,
+        }),
+      ],
+      spacing: { before: 200 },
+      alignment: 'center',
+    })
+  );
 
   return children;
 }

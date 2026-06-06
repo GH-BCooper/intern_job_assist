@@ -537,6 +537,15 @@ export default function Dashboard() {
           onDelete={() => handleDelete(detailApp.id)}
         />
       )}
+
+      {/* Footer */}
+      <footer className="border-t border-light-300 dark:border-dark-700 py-6 px-4 mt-12 transition-colors">
+        <div className="max-w-7xl mx-auto text-center">
+          <p className="text-light-600 dark:text-slate-600 text-xs">
+            © {new Date().getFullYear()} Made with ❤️ by Brett Cooper
+          </p>
+        </div>
+      </footer>
     </div>
   );
 }
