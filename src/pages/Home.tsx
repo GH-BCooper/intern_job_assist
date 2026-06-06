@@ -121,16 +121,23 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="border-t border-light-300 dark:border-dark-700 py-8 px-4 transition-colors">
-        <div className="max-w-7xl mx-auto flex items-center justify-between flex-wrap gap-4">
-          <div className="flex items-center gap-2">
-            <BookOpen size={16} className="text-green-400" />
-            <span className="font-semibold text-light-900 dark:text-white text-sm">
-              Intern<span className="text-green-400">Track</span>
-            </span>
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center justify-between flex-wrap gap-4 mb-4">
+            <div className="flex items-center gap-2">
+              <BookOpen size={16} className="text-green-400" />
+              <span className="font-semibold text-light-900 dark:text-white text-sm">
+                Intern<span className="text-green-400">Track</span>
+              </span>
+            </div>
+            <p className="text-light-600 dark:text-slate-600 text-sm">
+              Built to help students land great internships.
+            </p>
           </div>
-          <p className="text-light-600 dark:text-slate-600 text-sm">
-            Built to help students land great internships.
-          </p>
+          <div className="border-t border-light-300 dark:border-dark-700 pt-4">
+            <p className="text-light-600 dark:text-slate-600 text-xs text-center">
+              © {new Date().getFullYear()} Made with ❤️ by Brett Cooper
+            </p>
+          </div>
         </div>
       </footer>
     </div>
