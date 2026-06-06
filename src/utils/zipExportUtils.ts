@@ -10,6 +10,7 @@ import {
   Packer,
   SectionType,
   Footer,
+  AlignmentType,
 } from "docx";
 import type {
   Application,
@@ -260,11 +261,11 @@ async function buildDocxBlob(
                   children: [
                     new TextRun({
                       text: `© ${new Date().getFullYear()} Made with love by Brett Cooper`,
-                      color: "94A3B8",
-                      size: 16,
+                      size: 18,
                     }),
                   ],
-                  alignment: 'center',
+                  alignment: AlignmentType.CENTER,
+                  spacing: { before: 100 },
                 }),
               ],
             }),
