@@ -65,6 +65,7 @@ function appFields(
   return [
     { label: 'Company', value: app.company_name || '-' },
     { label: 'Role Applied To', value: app.role_applied_to || '-' },
+    { label: 'Platform Applied On', value: app.platform_applied_on || '-' },
     { label: 'Response Status', value: app.response_status || '-' },
     { label: 'Final Status', value: app.final_status || '-' },
     { label: 'Date Applied', value: formatDate(app.date_applied) },

@@ -33,6 +33,7 @@ const EMPTY: ApplicationInsert = {
   tasks_to_complete: '',
   resume_path: '',
   cover_letter_path: '',
+  platform_applied_on: '',
 };
 
 type InterviewInput = InterviewDateInsert & { tempId?: string };
@@ -65,6 +66,7 @@ export default function ApplicationForm({ onClose, onSave, initial, learnings: i
         tasks_to_complete: initial.tasks_to_complete,
         resume_path: initial.resume_path,
         cover_letter_path: initial.cover_letter_path,
+        platform_applied_on: initial.platform_applied_on,
       });
       setInterviews([]);
     }
@@ -215,6 +217,19 @@ export default function ApplicationForm({ onClose, onSave, initial, learnings: i
               placeholder="e.g. Software Engineer, Product Manager…"
               value={form.role_applied_to}
               onChange={e => set('role_applied_to', e.target.value)}
+            />
+          </div>
+
+          {/* Platform Applied On */}
+          <div>
+            <label className="block text-xs font-medium text-light-600 dark:text-slate-400 mb-1.5">
+              Platform Applied On
+            </label>
+            <input
+              className="input-field"
+              placeholder="e.g. LinkedIn, Company Website, AngelList…"
+              value={form.platform_applied_on}
+              onChange={e => set('platform_applied_on', e.target.value)}
             />
           </div>
 

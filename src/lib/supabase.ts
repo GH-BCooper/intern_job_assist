@@ -22,6 +22,7 @@ export type Application = {
   resume_path: string;
   cover_letter_path: string;
   role_applied_to: string;
+  platform_applied_on: string;
   created_at: string;
   updated_at: string;
 };
