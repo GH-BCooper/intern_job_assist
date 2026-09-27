@@ -7,24 +7,9 @@ import {
   HeadingLevel,
   BorderStyle,
   Packer,
-  AlignmentType,
   SectionType,
 } from 'docx';
 import type { Application } from '../lib/supabase';
-
-const STATUS_LABELS: Record<string, string> = {
-  response_status: 'Response Status',
-  final_status: 'Final Status',
-  company_name: 'Company',
-  company_description: 'Company Description',
-  resume_used: 'Resume Used',
-  cover_letter_used: 'Cover Letter Used',
-  interview_offered: 'Interview Offered',
-  date_applied: 'Date Applied',
-  salary_info: 'Salary Info / Questions to Ask',
-  interview_questions: 'Interview Questions',
-  tasks_to_complete: 'Tasks to Complete / Learn for Interview',
-};
 
 function formatDate(d: string | null): string {
   if (!d) return '—';
@@ -53,7 +38,7 @@ function appFields(app: Application): Array<{ label: string; value: string }> {
 
 // ── PDF ──────────────────────────────────────────────────────────────────────
 
-function buildPDF(apps: Application[], title: string): jsPDF {
+function buildPDF(apps: Application[]): jsPDF {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageW = doc.internal.pageSize.getWidth();
   const margin = 20;
@@ -115,13 +100,13 @@ function buildPDF(apps: Application[], title: string): jsPDF {
 }
 
 export function exportSinglePDF(app: Application): void {
-  const doc = buildPDF([app], app.company_name);
+  const doc = buildPDF([app]);
   doc.save(`${app.company_name.replace(/\s+/g, '_')}_application.pdf`);
 }
 
 export function exportAllPDF(apps: Application[]): void {
   if (!apps.length) return;
-  const doc = buildPDF(apps, 'All Applications');
+  const doc = buildPDF(apps);
   doc.save('all_applications.pdf');
 }
 

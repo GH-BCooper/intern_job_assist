@@ -1,5 +1,6 @@
 import { useState, useEffect, FormEvent, useRef } from "react";
 import { X, Loader2, Upload, FileUp, Trash2, Plus } from "lucide-react";
+import { toDateInput } from "../lib/format";
 import type {
   Application,
   ApplicationInsert,
@@ -7,7 +8,6 @@ import type {
   InterviewLearning,
   ApplicationFiles,
 } from "../lib/supabase";
-import { extractTextFromFile } from "../utils/pdfUtils";
 
 type Props = {
   onClose: () => void;
@@ -19,6 +19,8 @@ type Props = {
   ) => Promise<void>;
   initial?: Application | null;
   learnings?: InterviewLearning | null;
+  /** Applied only when creating — lets the assistant open a part-filled form. */
+  prefill?: Partial<ApplicationInsert> | null;
 };
 
 const RESPONSE_OPTIONS = [
@@ -55,6 +57,7 @@ export default function ApplicationForm({
   onSave,
   initial,
   learnings: initialLearnings,
+  prefill,
 }: Props) {
   const [form, setForm] = useState<ApplicationInsert>(EMPTY);
   const [interviews, setInterviews] = useState<InterviewInput[]>([]);
@@ -89,6 +92,8 @@ export default function ApplicationForm({
         platform_applied_on: initial.platform_applied_on,
       });
       setInterviews([]);
+    } else if (prefill) {
+      setForm({ ...EMPTY, date_applied: toDateInput(), ...prefill });
     }
     if (initialLearnings) {
       setLearnings({
@@ -98,7 +103,7 @@ export default function ApplicationForm({
     } else if (!initial) {
       setLearnings({ learnings_text: "", questions_asked: "" });
     }
-  }, [initial, initialLearnings]);
+  }, [initial, initialLearnings, prefill]);
 
   const set = (
     key: keyof ApplicationInsert,
@@ -130,6 +135,7 @@ export default function ApplicationForm({
       if (file) {
         try {
           setSaving(true);
+          const { extractTextFromFile } = await import("../utils/pdfUtils");
           const text = await extractTextFromFile(file);
           set(fieldKey, text);
         } catch {

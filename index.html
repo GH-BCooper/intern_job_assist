@@ -2,10 +2,31 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>InternTrack — Your Internship Journey, Organized</title>
-    <meta name="description" content="Track your internship applications, statuses, interviews, and tasks all in one place." />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>InternTrack — Your Internship Search, Run Properly</title>
+    <meta
+      name="description"
+      content="Track internship applications, interview rounds and learnings in one place — with an AI assistant that can read and change your entire pipeline. Free to run, end to end."
+    />
+    <meta name="theme-color" content="#FEF7EC" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1B170E" media="(prefers-color-scheme: dark)" />
+    <meta name="color-scheme" content="light dark" />
+
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="InternTrack" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="InternTrack — Your Internship Search, Run Properly" />
+    <meta
+      property="og:description"
+      content="A premium internship tracker with a Kanban pipeline, real analytics, follow-up notifications and an AI assistant with full access to your data."
+    />
+    <meta property="og:image" content="/icon-512.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -15,7 +36,10 @@
   </head>
   <body>
     <script>
-      try { if (localStorage.getItem('theme') === 'dark') document.documentElement.classList.add('dark'); } catch(e) {}
+      // Applied before first paint so the theme never flashes.
+      try {
+        if (localStorage.getItem('theme') === 'dark') document.documentElement.classList.add('dark');
+      } catch (e) {}
     </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>

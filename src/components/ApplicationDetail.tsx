@@ -1,11 +1,45 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  X, Edit2, Trash2, Loader2, Calendar, Briefcase,
-  CheckCircle, XCircle, Download, Eye
+  Bell,
+  BookOpen,
+  Calendar,
+  CalendarClock,
+  Copy,
+  Download,
+  Edit2,
+  Eye,
+  FileText,
+  Loader2,
+  Mail,
+  Plus,
+  Sparkles,
+  Star,
+  StickyNote,
+  Tag as TagIcon,
+  Target,
+  Trash2,
+  X,
 } from 'lucide-react';
 import type { Application, InterviewDate, InterviewLearning } from '../lib/supabase';
 import { supabase } from '../lib/supabase';
-import { exportSingleApplicationZip } from '../utils/zipExportUtils';
+import { useData } from '../context/DataContext';
+import { useAI } from '../context/AIContext';
+import { useStore } from '../hooks/useStore';
+import { STAGES, stageOf, stagePatch, type Stage } from '../lib/insights';
+import {
+  addNote,
+  addReminder,
+  deleteNote,
+  setStage,
+  toggleApplicationTag,
+  toggleStar,
+  upsertTag,
+} from '../lib/store';
+import { daysUntil, fmtDate, fmtDateTime, relative, toLocalInput } from '../lib/format';
+import { toast } from '../lib/uiBus';
+import Markdown from './ui/Markdown';
+import { CompanyAvatar } from './ApplicationCard';
+import { FINAL_BADGE, RESPONSE_BADGE } from './ApplicationCard';
 
 type Props = {
   application: Application;
@@ -14,284 +48,557 @@ type Props = {
   onDelete: () => Promise<void>;
 };
 
-const RESPONSE_BADGE: Record<string, string> = {
-  Pending: 'badge bg-yellow-100 dark:bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-500/20',
-  Viewed: 'badge bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-500/20',
-  Rejected: 'badge bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-500/20',
-  Shortlisted: 'badge bg-sky-100 dark:bg-sky-500/15 text-sky-700 dark:text-sky-400 border border-sky-200 dark:border-sky-500/20',
-  Offered: 'badge bg-primary-100 dark:bg-primary-500/15 text-primary-700 dark:text-primary-400 border border-primary-200 dark:border-primary-500/20',
-};
-
-const FINAL_BADGE: Record<string, string> = {
-  'In Progress': 'badge bg-blue-100/50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-500/20',
-  Rejected: 'badge bg-red-100/50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-500/20',
-  Accepted: 'badge bg-primary-100/50 dark:bg-primary-500/10 text-primary-700 dark:text-primary-300 border border-primary-200 dark:border-primary-500/20',
-  Withdrawn: 'badge bg-gray-100 dark:bg-dark-500/10 text-gray-700 dark:text-dark-400 border border-gray-200 dark:border-dark-500/20',
-};
-
-function formatDate(d: string | null): string {
-  if (!d) return '—';
-  return new Date(d).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-}
-
-function daysRemaining(date: string): { label: string; color: string } {
-  const today = new Date().setHours(0, 0, 0, 0);
-  const target = new Date(date).setHours(0, 0, 0, 0);
-  const diff = Math.ceil((target - today) / 86400000);
-
-  if (diff < 0) return { label: `${Math.abs(diff)} days ago`, color: 'text-red-600 dark:text-red-400' };
-  if (diff === 0) return { label: 'Today!', color: 'text-orange-600 dark:text-orange-400' };
-  return { label: `${diff} days remaining`, color: 'text-primary-600 dark:text-primary-400' };
-}
-
 function Field({ label, value }: { label: string; value: string | boolean | null }) {
-  const display = typeof value === 'boolean' ? (value ? 'Yes' : 'No') : value || '—';
-  if (display === '—') return null;
+  const display = typeof value === 'boolean' ? (value ? 'Yes' : 'No') : value || '';
+  if (!display) return null;
   return (
-    <div className="space-y-1">
-      <p className="text-xs font-medium text-light-600 dark:text-dark-500 uppercase tracking-wider">{label}</p>
-      <p className="text-sm text-light-900 dark:text-dark-200 leading-relaxed whitespace-pre-line">{display}</p>
+    <div>
+      <p className="label !mb-1">{label}</p>
+      <p className="text-sm text-light-800 dark:text-dark-100 leading-relaxed whitespace-pre-line">{display}</p>
     </div>
   );
 }
 
+const AI_ACTIONS = [
+  {
+    id: 'followup',
+    label: 'Draft follow-up email',
+    icon: Mail,
+    prompt: (app: Application) =>
+      `Draft a short, polite follow-up email about my application to ${app.company_name}${
+        app.role_applied_to ? ` for the ${app.role_applied_to} role` : ''
+      }. Use get_application on "${app.company_name}" first so the details are right. Give me a subject line and body I can paste.`,
+  },
+  {
+    id: 'prep',
+    label: 'Build interview prep plan',
+    icon: Target,
+    prompt: (app: Application) =>
+      `Build me an interview prep plan for ${app.company_name}. Call get_application on "${app.company_name}" first, use any stored interview questions and learnings, and end with two sharp questions I should ask them.`,
+  },
+  {
+    id: 'summary',
+    label: 'Summarise where this stands',
+    icon: BookOpen,
+    prompt: (app: Application) =>
+      `Summarise where my ${app.company_name} application stands, what has happened so far, and the single next action. Use get_application on "${app.company_name}".`,
+  },
+  {
+    id: 'cover',
+    label: 'Draft a tailored cover letter',
+    icon: FileText,
+    prompt: (app: Application) =>
+      `Write a tailored, concise cover letter for ${app.company_name}${
+        app.role_applied_to ? ` (${app.role_applied_to})` : ''
+      }. Call get_application on "${app.company_name}" first. Keep it under 250 words, specific, no clichés.`,
+  },
+];
+
 export default function ApplicationDetail({ application: app, onClose, onEdit, onDelete }: Props) {
+  const { interviewsMap, learningsMap, updateApplication, addInterviewDate, removeInterviewDate } = useData();
+  const ai = useAI();
+  const store = useStore();
+
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [interviews, setInterviews] = useState<InterviewDate[]>([]);
-  const [learnings, setLearnings] = useState<InterviewLearning | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [learnings, setLearnings] = useState<InterviewLearning | null>(learningsMap[app.id] ?? null);
+  const [tagInput, setTagInput] = useState('');
+  const [noteInput, setNoteInput] = useState('');
+  const [ivDate, setIvDate] = useState(() => toLocalInput());
+  const [ivLabel, setIvLabel] = useState('');
+  const [showIvForm, setShowIvForm] = useState(false);
+  const [remTitle, setRemTitle] = useState('');
+  const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [draft, setDraft] = useState<{ label: string; text: string } | null>(null);
+
+  const interviews: InterviewDate[] = interviewsMap[app.id] || [];
+  const stage = stageOf(app, store.stageOverrides);
+  const starred = store.starred.includes(app.id);
+  const notes = store.notes.filter(n => n.application_id === app.id);
+  const reminders = store.reminders.filter(r => r.application_id === app.id && !r.done);
+  const appTagIds = useMemo(
+    () => store.applicationTags.filter(at => at.application_id === app.id).map(at => at.tag_id),
+    [store.applicationTags, app.id],
+  );
 
   useEffect(() => {
-    const loadData = async () => {
-      const { data: interviewsData } = await supabase
-        .from('interview_dates')
-        .select('*')
-        .eq('application_id', app.id)
-        .order('interview_date', { ascending: true });
-      setInterviews(interviewsData || []);
-
-      const { data: learningsData } = await supabase
-        .from('interview_learnings')
-        .select('*')
-        .eq('application_id', app.id)
-        .maybeSingle();
-      setLearnings(learningsData);
+    setLearnings(learningsMap[app.id] ?? null);
+    if (learningsMap[app.id]) return;
+    let live = true;
+    void supabase
+      .from('interview_learnings')
+      .select('*')
+      .eq('application_id', app.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (live) setLearnings(data ?? null);
+      });
+    return () => {
+      live = false;
     };
-    loadData();
-  }, [app.id]);
+  }, [app.id, learningsMap]);
 
-  const handleDelete = async () => {
-    setDeleting(true);
-    await onDelete();
-    setDeleting(false);
-    onClose();
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const changeStage = async (next: Stage) => {
+    setStage(app.id, next);
+    try {
+      await updateApplication(app.id, stagePatch(next));
+      toast(`Moved to ${next}.`, 'success');
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Could not save the stage.', 'error');
+    }
   };
 
-  const handleDownload = async () => {
+  const runAiAction = async (action: (typeof AI_ACTIONS)[number]) => {
+    if (!ai.configured) {
+      toast('Connect a free model in Settings first.', 'error');
+      return;
+    }
+    setBusyAction(action.id);
+    setDraft(null);
+    try {
+      const text = await ai.askInline(action.prompt(app));
+      setDraft({ label: action.label, text });
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'The model could not answer.', 'error');
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const handleDownloadZip = async () => {
     setExporting(true);
     try {
-      const files: {
-        resume?: Blob;
-        coverLetter?: Blob;
-        resumeName?: string;
-        coverLetterName?: string;
-      } = {
+      const files: { resume?: Blob; coverLetter?: Blob; resumeName?: string; coverLetterName?: string } = {
         resumeName: app.resume_used || undefined,
         coverLetterName: app.cover_letter_used || undefined,
       };
-
       if (app.resume_path) {
         const { data } = await supabase.storage.from('applications').download(app.resume_path);
         if (data) files.resume = data;
       }
-
       if (app.cover_letter_path) {
         const { data } = await supabase.storage.from('applications').download(app.cover_letter_path);
         if (data) files.coverLetter = data;
       }
-
+      const { exportSingleApplicationZip } = await import('../utils/zipExportUtils');
       await exportSingleApplicationZip(app, interviews, learnings, files);
+    } catch {
+      toast('Export failed.', 'error');
     } finally {
       setExporting(false);
     }
   };
 
-  const resumeUrl = app.resume_path
-    ? supabase.storage.from('applications').getPublicUrl(app.resume_path).data?.publicUrl
-    : null;
-
-  const coverLetterUrl = app.cover_letter_path
+  const resumeUrl = app.resume_path ? supabase.storage.from('applications').getPublicUrl(app.resume_path).data?.publicUrl : null;
+  const coverUrl = app.cover_letter_path
     ? supabase.storage.from('applications').getPublicUrl(app.cover_letter_path).data?.publicUrl
     : null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+    <div className="fixed inset-0 z-[105] flex items-start sm:items-center justify-center p-0 sm:p-6 overflow-y-auto">
+      <div className="fixed inset-0 bg-light-900/25 dark:bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
-      <div className="relative w-full max-w-xl bg-light-100 dark:bg-dark-800 border border-light-300 dark:border-dark-600 rounded-2xl shadow-2xl max-h-[90vh] flex flex-col transition-colors">
-        {/* Header */}
-        <div className="px-6 py-5 border-b border-light-300 dark:border-dark-600 flex-shrink-0">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-xl bg-primary-500/10 flex items-center justify-center flex-shrink-0">
-                <Briefcase size={18} className="text-primary-400" />
-              </div>
-              <div className="min-w-0">
-                <h2 className="font-semibold text-light-900 dark:text-white text-xl truncate">{app.company_name}</h2>
-                <div className="flex items-center gap-1.5 mt-1">
-                  <Calendar size={12} className="text-light-600 dark:text-dark-500" />
-                  <span className="text-xs text-light-600 dark:text-dark-500">{formatDate(app.date_applied)}</span>
-                </div>
+      <div className="relative w-full max-w-4xl my-0 sm:my-8 card !rounded-none sm:!rounded-2xl !bg-light-100 dark:!bg-dark-950 shadow-lift animate-scale-in">
+        {/* header */}
+        <header className="sticky top-0 z-10 flex items-start gap-3 px-5 py-4 border-b border-light-300 dark:border-dark-800 bg-light-100/95 dark:bg-dark-950/95 backdrop-blur-sm sm:rounded-t-2xl">
+          <CompanyAvatar name={app.company_name} size={44} />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-bold text-light-900 dark:text-white truncate">{app.company_name}</h2>
+              <button
+                onClick={() => toggleStar(app.id)}
+                className={starred ? 'text-primary-500' : 'text-light-400 hover:text-primary-500'}
+                aria-label="Star"
+              >
+                <Star size={15} fill={starred ? 'currentColor' : 'none'} />
+              </button>
+            </div>
+            <p className="text-sm text-light-600 dark:text-dark-300 truncate">
+              {[app.role_applied_to, app.platform_applied_on].filter(Boolean).join(' · ') || 'No role recorded'}
+            </p>
+          </div>
+          <button onClick={onClose} className="btn-ghost btn-icon flex-shrink-0" aria-label="Close">
+            <X size={18} />
+          </button>
+        </header>
+
+        <div className="px-5 py-5 grid lg:grid-cols-[1fr,17rem] gap-6">
+          {/* main column */}
+          <div className="space-y-5 min-w-0">
+            {/* stage picker */}
+            <div>
+              <p className="label">Pipeline stage</p>
+              <div className="flex flex-wrap gap-1.5">
+                {STAGES.map(s => (
+                  <button
+                    key={s}
+                    onClick={() => void changeStage(s)}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                      stage === s
+                        ? 'bg-gradient-to-br from-primary-500 to-accent-500 text-white border-transparent shadow-soft'
+                        : 'border-light-300 dark:border-dark-700 text-light-700 dark:text-dark-200 hover:border-primary-400'
+                    }`}
+                  >
+                    {s}
+                  </button>
+                ))}
               </div>
             </div>
-            <button onClick={onClose} className="text-light-600 dark:text-dark-400 hover:text-light-900 dark:hover:text-white transition-colors p-1 rounded flex-shrink-0">
-              <X size={20} />
-            </button>
-          </div>
 
-          <div className="flex flex-wrap gap-2 mt-3">
-            <span className={RESPONSE_BADGE[app.response_status] ?? RESPONSE_BADGE['Pending']}>
-              {app.response_status}
-            </span>
-            <span className={FINAL_BADGE[app.final_status] ?? FINAL_BADGE['In Progress']}>
-              {app.final_status}
-            </span>
-            {app.interview_offered ? (
-              <span className="badge bg-primary-100 dark:bg-primary-500/10 text-primary-700 dark:text-primary-300 border border-primary-200 dark:border-primary-500/20">
-                <CheckCircle size={11} className="mr-1" /> Interview Offered
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`badge ${RESPONSE_BADGE[app.response_status] || RESPONSE_BADGE.Pending}`}>
+                {app.response_status || 'Pending'}
               </span>
-            ) : (
-              <span className="badge bg-gray-100 dark:bg-dark-500/10 text-gray-700 dark:text-dark-400 border border-gray-200 dark:border-dark-500/20">
-                <XCircle size={11} className="mr-1" /> No Interview
+              <span className={`badge ${FINAL_BADGE[app.final_status] || FINAL_BADGE['In Progress']}`}>
+                {app.final_status || 'In Progress'}
               </span>
-            )}
-          </div>
-        </div>
-
-        {/* Body */}
-        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
-          {/* Files */}
-          {(resumeUrl || coverLetterUrl) && (
-            <div className="space-y-2 border-b border-light-300 dark:border-dark-600 pb-4">
-              <p className="text-xs font-medium text-light-600 dark:text-dark-500 uppercase">Documents</p>
-              <div className="flex flex-col gap-2">
-                {resumeUrl && (
-                  <a
-                    href={resumeUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-3 py-2 bg-light-200 dark:bg-dark-700 hover:bg-light-300 dark:hover:bg-dark-600 rounded-lg transition-colors text-sm text-light-900 dark:text-white font-medium"
-                  >
-                    <Eye size={14} /> View Resume
-                  </a>
-                )}
-                {coverLetterUrl && (
-                  <a
-                    href={coverLetterUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-3 py-2 bg-light-200 dark:bg-dark-700 hover:bg-light-300 dark:hover:bg-dark-600 rounded-lg transition-colors text-sm text-light-900 dark:text-white font-medium"
-                  >
-                    <Eye size={14} /> View Cover Letter
-                  </a>
-                )}
-              </div>
+              <span className="badge bg-light-200 dark:bg-dark-800 text-light-600 dark:text-dark-300">
+                <Calendar size={10} /> Applied {fmtDate(app.date_applied)}
+              </span>
             </div>
-          )}
 
-          {/* Interview Dates */}
-          {interviews.length > 0 && (
-            <div className="space-y-2 border-b border-light-300 dark:border-dark-600 pb-4">
-              <p className="text-xs font-medium text-light-600 dark:text-dark-500 uppercase">Interview Dates</p>
-              <div className="space-y-1.5">
-                {interviews.map(iv => {
-                  const { label, color } = daysRemaining(iv.interview_date);
+            {/* AI actions */}
+            <div className="panel p-4 border-primary-200 dark:border-primary-900 bg-gradient-to-br from-primary-50/70 to-transparent dark:from-primary-950/20">
+              <div className="flex items-center gap-2 mb-3">
+                <Sparkles size={14} className="text-primary-600 dark:text-primary-400" />
+                <h3 className="text-sm font-semibold text-light-900 dark:text-white">Scout can help with this one</h3>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-2">
+                {AI_ACTIONS.map(action => {
+                  const Icon = action.icon;
                   return (
-                    <div key={iv.id} className="flex items-center justify-between p-2 bg-light-200 dark:bg-dark-700 rounded-lg">
-                      <div>
-                        <p className="text-sm font-medium text-light-900 dark:text-white">{iv.label}</p>
-                        <p className="text-xs text-light-600 dark:text-dark-500">{formatDate(iv.interview_date)}</p>
-                      </div>
-                      <p className={`text-xs font-semibold ${color}`}>{label}</p>
-                    </div>
+                    <button
+                      key={action.id}
+                      onClick={() => void runAiAction(action)}
+                      disabled={busyAction !== null}
+                      className="btn-secondary !justify-start text-xs !py-2"
+                    >
+                      {busyAction === action.id ? <Loader2 size={13} className="animate-spin" /> : <Icon size={13} />}
+                      {action.label}
+                    </button>
                   );
                 })}
               </div>
-            </div>
-          )}
 
-          {/* Fields */}
-          <div className="grid grid-cols-1 gap-5">
-            <Field label="Role Applied To" value={app.role_applied_to} />
-            <Field label="Platform Applied On" value={app.platform_applied_on} />
-            <Field label="Resume Used" value={app.resume_used} />
-            <Field label="Cover Letter Used" value={app.cover_letter_used} />
-            <Field label="Company Description" value={app.company_description} />
-            <Field label="Salary Info / Questions to Ask" value={app.salary_info} />
-            <Field label="Tasks to Complete / Learn for Interview" value={app.tasks_to_complete} />
-            <Field label="Interview Questions" value={app.interview_questions} />
-          </div>
-
-          {/* Interview Learnings */}
-          {learnings && (learnings.learnings || learnings.questions_asked) && (
-            <div className="border-t border-light-300 dark:border-dark-600 pt-4 space-y-3">
-              <h3 className="font-semibold text-light-900 dark:text-white text-sm">Interview Learnings</h3>
-              {learnings.learnings && (
-                <div className="space-y-1">
-                  <p className="text-xs font-medium text-light-600 dark:text-dark-500 uppercase">Learnings</p>
-                  <p className="text-sm text-light-900 dark:text-dark-200 leading-relaxed whitespace-pre-line">{learnings.learnings}</p>
+              {draft && (
+                <div className="mt-3 p-3 rounded-xl bg-light-50 dark:bg-dark-900 border border-light-300 dark:border-dark-800 animate-slide-up">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-light-600 dark:text-dark-300">
+                      {draft.label}
+                    </p>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => {
+                          void navigator.clipboard.writeText(draft.text);
+                          toast('Copied to clipboard.', 'success');
+                        }}
+                        className="btn-ghost btn-sm !px-2"
+                      >
+                        <Copy size={11} /> Copy
+                      </button>
+                      <button
+                        onClick={() => {
+                          addNote({ application_id: app.id, body: `**${draft.label}**\n\n${draft.text}` });
+                          toast('Saved as a note.', 'success');
+                        }}
+                        className="btn-ghost btn-sm !px-2"
+                      >
+                        <StickyNote size={11} /> Save
+                      </button>
+                      <button onClick={() => setDraft(null)} className="btn-ghost btn-icon !p-1" aria-label="Dismiss">
+                        <X size={12} />
+                      </button>
+                    </div>
+                  </div>
+                  <Markdown text={draft.text} className="text-light-800 dark:text-dark-100" />
                 </div>
               )}
-              {learnings.questions_asked && (
-                <div className="space-y-1">
-                  <p className="text-xs font-medium text-light-600 dark:text-dark-500 uppercase">Questions Asked</p>
-                  <p className="text-sm text-light-900 dark:text-dark-200 leading-relaxed whitespace-pre-line">{learnings.questions_asked}</p>
-                </div>
-              )}
             </div>
-          )}
-        </div>
 
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-light-300 dark:border-dark-600 flex-shrink-0">
-          <div className="mb-3">
-            <button
-              onClick={handleDownload}
-              disabled={exporting}
-              className="btn-secondary w-full justify-center"
-            >
-              {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-              Download ZIP
-            </button>
-          </div>
-
-          {/* Actions row */}
-          {!confirmDelete ? (
-            <div className="flex items-center gap-2">
-              <button onClick={onEdit} className="btn-primary flex-1">
-                <Edit2 size={14} /> Edit
-              </button>
-              <button onClick={() => setConfirmDelete(true)} className="btn-danger flex-1">
-                <Trash2 size={14} /> Delete
-              </button>
-            </div>
-          ) : (
-            <div className="bg-red-100 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-lg p-3">
-              <p className="text-red-700 dark:text-red-300 text-sm mb-3 text-center">
-                Delete this application? This cannot be undone.
-              </p>
-              <div className="flex gap-2">
-                <button onClick={() => setConfirmDelete(false)} className="btn-secondary flex-1">
-                  Cancel
-                </button>
-                <button onClick={handleDelete} disabled={deleting} className="btn-danger flex-1">
-                  {deleting && <Loader2 size={13} className="animate-spin" />}
-                  {deleting ? 'Deleting…' : 'Yes, Delete'}
+            {/* interviews */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="label !mb-0">Interview rounds</p>
+                <button onClick={() => setShowIvForm(s => !s)} className="btn-ghost btn-sm !px-2">
+                  <Plus size={12} /> Add
                 </button>
               </div>
+
+              {showIvForm && (
+                <div className="panel p-3 mb-2 space-y-2 animate-fade-in">
+                  <input type="datetime-local" value={ivDate} onChange={e => setIvDate(e.target.value)} className="input-field" />
+                  <input
+                    value={ivLabel}
+                    onChange={e => setIvLabel(e.target.value)}
+                    placeholder="Round label — e.g. Round 2, technical"
+                    className="input-field"
+                  />
+                  <button
+                    onClick={async () => {
+                      try {
+                        await addInterviewDate(app.id, new Date(ivDate).toISOString(), ivLabel.trim() || 'Interview');
+                        if (!app.interview_offered) await updateApplication(app.id, { interview_offered: true });
+                        setIvLabel('');
+                        setShowIvForm(false);
+                        toast('Interview added.', 'success');
+                      } catch (e) {
+                        toast(e instanceof Error ? e.message : 'Could not add the interview.', 'error');
+                      }
+                    }}
+                    className="btn-primary btn-sm w-full"
+                  >
+                    Save round
+                  </button>
+                </div>
+              )}
+
+              {interviews.length === 0 ? (
+                <p className="text-xs text-light-500 dark:text-dark-400">No rounds recorded.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {interviews.map(iv => {
+                    const d = daysUntil(iv.interview_date);
+                    return (
+                      <li key={iv.id} className="panel p-3 flex items-center gap-3">
+                        <CalendarClock size={15} className="text-primary-500 flex-shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-light-900 dark:text-white truncate">{iv.label || 'Interview'}</p>
+                          <p className="text-[11px] text-light-500 dark:text-dark-400">{fmtDateTime(iv.interview_date)}</p>
+                        </div>
+                        {d !== null && (
+                          <span
+                            className={`badge ${
+                              d < 0
+                                ? 'bg-light-200 dark:bg-dark-800 text-light-600 dark:text-dark-400'
+                                : d <= 2
+                                  ? 'bg-accent-100 dark:bg-accent-950/60 text-accent-700 dark:text-accent-300'
+                                  : 'bg-primary-100 dark:bg-primary-950/60 text-primary-700 dark:text-primary-300'
+                            }`}
+                          >
+                            {d < 0 ? `${Math.abs(d)}d ago` : d === 0 ? 'Today' : `in ${d}d`}
+                          </span>
+                        )}
+                        <button
+                          onClick={() => void removeInterviewDate(iv.id)}
+                          className="text-light-400 hover:text-red-500 flex-shrink-0"
+                          aria-label="Remove round"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </div>
-          )}
+
+            <div className="grid sm:grid-cols-2 gap-4">
+              <Field label="Company notes" value={app.company_description} />
+              <Field label="Stipend / salary" value={app.salary_info} />
+              <Field label="Resume used" value={app.resume_used} />
+              <Field label="Cover letter used" value={app.cover_letter_used} />
+            </div>
+
+            <Field label="Interview questions" value={app.interview_questions} />
+            <Field label="Tasks to complete" value={app.tasks_to_complete} />
+
+            {learnings && (learnings.learnings || learnings.questions_asked) && (
+              <div className="panel p-4 space-y-3">
+                <h3 className="text-sm font-semibold text-light-900 dark:text-white flex items-center gap-2">
+                  <BookOpen size={14} className="text-primary-500" /> Interview learnings
+                </h3>
+                <Field label="What I learned" value={learnings.learnings} />
+                <Field label="Questions they asked" value={learnings.questions_asked} />
+              </div>
+            )}
+
+            {(resumeUrl || coverUrl) && (
+              <div>
+                <p className="label">Attached documents</p>
+                <div className="flex flex-wrap gap-2">
+                  {resumeUrl && (
+                    <a href={resumeUrl} target="_blank" rel="noreferrer" className="btn-secondary btn-sm">
+                      <Eye size={12} /> View resume
+                    </a>
+                  )}
+                  {coverUrl && (
+                    <a href={coverUrl} target="_blank" rel="noreferrer" className="btn-secondary btn-sm">
+                      <Eye size={12} /> View cover letter
+                    </a>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* side rail */}
+          <aside className="space-y-4 min-w-0">
+            <div className="panel p-3">
+              <p className="label flex items-center gap-1.5">
+                <TagIcon size={11} /> Tags
+              </p>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {store.tags.map(t => {
+                  const on = appTagIds.includes(t.id);
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => toggleApplicationTag(app.id, t.id)}
+                      className="badge transition-all"
+                      style={{
+                        background: on ? `${t.color}26` : 'transparent',
+                        color: on ? t.color : undefined,
+                        border: `1px solid ${on ? `${t.color}59` : 'transparent'}`,
+                        opacity: on ? 1 : 0.6,
+                      }}
+                    >
+                      {t.name}
+                    </button>
+                  );
+                })}
+              </div>
+              <input
+                value={tagInput}
+                onChange={e => setTagInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key !== 'Enter' || !tagInput.trim()) return;
+                  const tag = upsertTag(tagInput);
+                  if (!appTagIds.includes(tag.id)) toggleApplicationTag(app.id, tag.id);
+                  setTagInput('');
+                }}
+                placeholder="New tag + Enter"
+                className="input-field !py-1.5 !text-xs"
+              />
+            </div>
+
+            <div className="panel p-3">
+              <p className="label flex items-center gap-1.5">
+                <Bell size={11} /> Reminders
+              </p>
+              {reminders.length > 0 && (
+                <ul className="space-y-1.5 mb-2">
+                  {reminders.map(r => (
+                    <li key={r.id} className="text-[11px] text-light-700 dark:text-dark-200">
+                      <span className="block font-medium truncate">{r.title}</span>
+                      <span className="text-light-500 dark:text-dark-400">{relative(r.due_at)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <input
+                value={remTitle}
+                onChange={e => setRemTitle(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key !== 'Enter' || !remTitle.trim()) return;
+                  const due = new Date();
+                  due.setDate(due.getDate() + 3);
+                  due.setHours(10, 0, 0, 0);
+                  addReminder({ title: remTitle.trim(), due_at: due.toISOString(), application_id: app.id, kind: 'follow_up' });
+                  setRemTitle('');
+                  toast('Reminder set for 3 days from now.', 'success');
+                }}
+                placeholder="Remind me… + Enter"
+                className="input-field !py-1.5 !text-xs"
+              />
+            </div>
+
+            <div className="panel p-3">
+              <p className="label flex items-center gap-1.5">
+                <StickyNote size={11} /> Notes
+              </p>
+              {notes.length > 0 && (
+                <ul className="space-y-2 mb-2 max-h-56 overflow-y-auto">
+                  {notes.map(n => (
+                    <li key={n.id} className="group text-[11px] text-light-700 dark:text-dark-200 border-l-2 border-primary-300 dark:border-primary-800 pl-2">
+                      <Markdown text={n.body} className="!text-[11px]" />
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-light-500 dark:text-dark-500">{relative(n.created_at)}</span>
+                        <button
+                          onClick={() => deleteNote(n.id)}
+                          className="opacity-0 group-hover:opacity-100 text-light-400 hover:text-red-500 transition-opacity"
+                          aria-label="Delete note"
+                        >
+                          <Trash2 size={10} />
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <textarea
+                value={noteInput}
+                onChange={e => setNoteInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && noteInput.trim()) {
+                    addNote({ application_id: app.id, body: noteInput.trim() });
+                    setNoteInput('');
+                  }
+                }}
+                rows={2}
+                placeholder="Add a note… ⌘Enter"
+                className="input-field !py-1.5 !text-xs resize-none"
+              />
+            </div>
+
+            <div className="panel p-3 space-y-1.5">
+              <p className="label">Actions</p>
+              <button onClick={onEdit} className="btn-secondary btn-sm w-full !justify-start">
+                <Edit2 size={12} /> Edit application
+              </button>
+              <button
+                onClick={async () => {
+                  const { exportSinglePDF } = await import('../utils/exportUtils');
+                  exportSinglePDF(app);
+                }}
+                className="btn-secondary btn-sm w-full !justify-start"
+              >
+                <FileText size={12} /> Export PDF
+              </button>
+              <button onClick={handleDownloadZip} disabled={exporting} className="btn-secondary btn-sm w-full !justify-start">
+                {exporting ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+                Download ZIP
+              </button>
+              {confirmDelete ? (
+                <div className="pt-1 space-y-1.5">
+                  <p className="text-[11px] text-red-600 dark:text-red-400 leading-snug">
+                    Delete this application permanently?
+                  </p>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={async () => {
+                        setDeleting(true);
+                        try {
+                          await onDelete();
+                          onClose();
+                        } catch (e) {
+                          toast(e instanceof Error ? e.message : 'Delete failed.', 'error');
+                        } finally {
+                          setDeleting(false);
+                        }
+                      }}
+                      className="btn-danger btn-sm flex-1"
+                    >
+                      {deleting ? <Loader2 size={12} className="animate-spin" /> : 'Yes, delete'}
+                    </button>
+                    <button onClick={() => setConfirmDelete(false)} className="btn-ghost btn-sm flex-1">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button onClick={() => setConfirmDelete(true)} className="btn-danger btn-sm w-full !justify-start">
+                  <Trash2 size={12} /> Delete
+                </button>
+              )}
+            </div>
+          </aside>
         </div>
       </div>
     </div>

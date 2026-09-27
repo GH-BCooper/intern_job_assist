@@ -1,19 +1,32 @@
 # InternTrack - Internship Application Management Platform
 
-A modern, full-stack web application for tracking internship applications, interview dates, and learnings. Built with React, TypeScript, and Supabase, InternTrack helps you stay organized throughout your internship search journey.
+A full internship-search workspace: track applications, interview rounds and learnings, see what is actually converting, and hand the busywork to an AI assistant that can read and change your whole pipeline.
 
-**[Live Demo](https://intern-job-assist.vercel.app)** · **[Report Bug](https://github.com/yourusername/intern_job_assist/issues)**
+Built with React, TypeScript and Supabase — and designed so that running it costs nothing.
+
+**[Live Demo](https://intern-job-assist.vercel.app)** · **[What's new in v2](versionTwo.md)** · **[Report Bug](https://github.com/GH-BCooper/intern_job_assist/issues)**
 
 ## Features
 
-- 🎯 **Track Applications** - Log companies, roles, platforms, dates, and response statuses
-- 📅 **Monitor Interviews** - Track multiple interview rounds per application with countdown timers
-- 📄 **Document Management** - Upload and store resumes and cover letters with PDF support
-- 📊 **Dashboard Overview** - Visualize all applications with filters and sorting
-- 💾 **Export Records** - Download applications as PDF or DOCX files, with bulk ZIP exports
-- 🌙 **Dark Mode** - Built-in dark/light theme support
-- 🔐 **Secure Authentication** - User authentication with Supabase
-- 📱 **Responsive Design** - Works seamlessly on desktop, tablet, and mobile
+- ✨ **Scout, the AI assistant** - 34 tools give it real read/write access: add and update applications, move pipeline stages, schedule follow-ups, run analytics, draft emails, even drive the interface. Runs on your own free-tier key (Gemini, Groq, OpenRouter) or a local Ollama model.
+- 🗂️ **Kanban pipeline** - Drag applications across Wishlist → Applied → In Review → Interviewing → Offer → Closed, with statuses kept in sync.
+- 🔭 **Four views** - Board, Cards, sortable Table and Timeline, with saveable filter views.
+- 📊 **Insights** - Conversion funnel, per-platform interview rates, 12-week cadence, activity heatmap, streaks, momentum score and goal tracking.
+- 🔔 **Follow-ups that fire** - Quiet applications get flagged, reminders arrive as native browser notifications, interviews count down.
+- 🗓️ **Calendar** - Interviews, reminders and application dates on one month view.
+- 🧰 **Workspace** - Tasks, reminders, markdown notes, contacts, resume versions, tags and an activity log.
+- ⌘ **Command palette** - ⌘K to jump to any application, page, view or action.
+- 📅 **Interview rounds** - Multiple rounds per application with countdown timers.
+- 📄 **Documents** - Upload resumes and cover letters, with PDF text extraction.
+- 💾 **Exports** - PDF, DOCX, CSV, JSON and bulk ZIP with attachments; JSON import.
+- 📲 **Installable PWA** - Works offline via a service worker.
+- 🌙 **Light & dark** - A bright, warm light mode and a low-glare dark mode.
+- 🔐 **Secure authentication** - Email/password and Google sign-in via Supabase.
+- 📱 **Responsive** - Desktop, tablet and mobile.
+
+## Cost
+
+Every layer runs on a permanent free tier — Vercel Hobby, the Supabase free tier, your own free AI key (or local Ollama), hand-rolled SVG charts and native browser notifications. There is no paid dependency anywhere in the stack.
 
 ## Tech Stack
 
@@ -27,6 +40,12 @@ A modern, full-stack web application for tracking internship applications, inter
 ### Backend & Database
 - **Supabase** - PostgreSQL database + authentication
 - **Supabase Storage** - File uploads (resumes, cover letters)
+- **Local-first store** - Tags, reminders, tasks, notes, contacts, goals and AI threads are kept per-user in the browser, so v2 needs no schema change and no extra quota
+
+### AI
+- **Google Gemini** - native function calling (`gemini-2.0-flash`)
+- **Groq / OpenRouter / Ollama** - OpenAI-compatible tool calling
+- Keys are stored in your browser and sent only to the provider you pick
 
 ### Export & PDF
 - **jsPDF** - PDF generation

@@ -1,0 +1,23 @@
+{
+  "name": "InternTrack — Internship Application Tracker",
+  "short_name": "InternTrack",
+  "description": "Track internship applications, interviews and learnings, with an AI assistant that can see and change your whole pipeline.",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#FEF7EC",
+  "theme_color": "#FB923C",
+  "categories": ["productivity", "business", "education"],
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Dashboard", "url": "/dashboard" },
+    { "name": "Insights", "url": "/insights" },
+    { "name": "Calendar", "url": "/calendar" },
+    { "name": "Workspace", "url": "/workspace" }
+  ]
+}

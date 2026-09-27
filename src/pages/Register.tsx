@@ -1,7 +1,7 @@
 import { useState, FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { BookOpen, Loader2, Eye, EyeOff } from 'lucide-react';
+import { Sparkles, Loader2, Eye, EyeOff } from 'lucide-react';
 
 function GoogleIcon() {
   return (
@@ -69,16 +69,16 @@ export default function Register() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-20 bg-light-50 dark:bg-dark-900 transition-colors">
+    <div className="min-h-screen flex items-center justify-center px-4 py-20">
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
           <Link to="/" className="inline-flex items-center gap-2 group">
-            <div className="w-10 h-10 bg-primary-500/10 rounded-xl flex items-center justify-center group-hover:bg-primary-500/20 transition-colors">
-              <BookOpen size={20} className="text-primary-400" />
-            </div>
-            <span className="font-semibold text-light-900 dark:text-white text-2xl">
-              Intern<span className="text-primary-400">Track</span>
+            <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center shadow-soft group-hover:shadow-glow transition-shadow">
+              <Sparkles size={20} className="text-white" />
+            </span>
+            <span className="font-bold text-light-900 dark:text-white text-2xl tracking-tight">
+              Intern<span className="text-gradient">Track</span>
             </span>
           </Link>
           <h1 className="mt-6 text-2xl font-bold text-light-900 dark:text-white">Create your account</h1>
@@ -86,7 +86,7 @@ export default function Register() {
         </div>
 
         {/* Card */}
-        <div className="card p-8 border-light-300 dark:border-dark-600">
+        <div className="card p-8">
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Google button */}
             <button

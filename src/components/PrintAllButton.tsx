@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from 'react';
 import { ChevronDown, FileText, FileDown, Loader2, Download } from 'lucide-react';
 import type { Application, InterviewDate, InterviewLearning } from '../lib/supabase';
 import { supabase } from '../lib/supabase';
-import { exportAllApplicationsZip } from '../utils/zipExportUtils';
 
 type Props = {
   applications: Application[];
@@ -97,6 +96,7 @@ export default function PrintAllButton({ applications }: Props) {
       const interviews = await loadAllInterviews();
       const learnings = await loadAllLearnings();
       const fileMap = await loadAllFiles();
+      const { exportAllApplicationsZip } = await import('../utils/zipExportUtils');
       await exportAllApplicationsZip(applications, interviews, learnings, fileMap, 'pdf');
     } finally {
       setLoadingPdf(false);
@@ -110,6 +110,7 @@ export default function PrintAllButton({ applications }: Props) {
       const interviews = await loadAllInterviews();
       const learnings = await loadAllLearnings();
       const fileMap = await loadAllFiles();
+      const { exportAllApplicationsZip } = await import('../utils/zipExportUtils');
       await exportAllApplicationsZip(applications, interviews, learnings, fileMap, 'docx');
     } finally {
       setLoadingDocx(false);

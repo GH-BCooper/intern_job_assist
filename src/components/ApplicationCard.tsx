@@ -1,78 +1,152 @@
-import { Calendar, CheckCircle, XCircle, Clock, Briefcase, ChevronRight } from 'lucide-react';
-import type { Application } from '../lib/supabase';
+import { Calendar, CalendarClock, MapPin, Star, Wallet } from 'lucide-react';
+import type { Application, InterviewDate } from '../lib/supabase';
+import { STAGE_META, stageOf, type Stage } from '../lib/insights';
+import { useStore } from '../hooks/useStore';
+import { toggleStar } from '../lib/store';
+import { avatarGradient, daysUntil, fmtDate, initials, truncate } from '../lib/format';
+
+export const RESPONSE_BADGE: Record<string, string> = {
+  Pending: 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300',
+  Viewed: 'bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300',
+  Rejected: 'bg-red-100 dark:bg-red-950/60 text-red-800 dark:text-red-300',
+  Shortlisted: 'bg-violet-100 dark:bg-violet-950/60 text-violet-800 dark:text-violet-300',
+  Offered: 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300',
+};
+
+export const FINAL_BADGE: Record<string, string> = {
+  'In Progress': 'bg-light-200 dark:bg-dark-800 text-light-700 dark:text-dark-200',
+  Rejected: 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300',
+  Accepted: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300',
+  Withdrawn: 'bg-light-200 dark:bg-dark-800 text-light-600 dark:text-dark-400',
+};
+
+export function StageDot({ stage }: { stage: Stage }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className={`w-1.5 h-1.5 rounded-full ${STAGE_META[stage].dot}`} />
+      <span className={`text-[11px] font-semibold ${STAGE_META[stage].accent}`}>{stage}</span>
+    </span>
+  );
+}
+
+export function CompanyAvatar({ name, size = 40 }: { name: string; size?: number }) {
+  return (
+    <span
+      className={`rounded-xl bg-gradient-to-br ${avatarGradient(name)} flex items-center justify-center flex-shrink-0 text-white font-bold`}
+      style={{ width: size, height: size, fontSize: size * 0.34 }}
+      aria-hidden
+    >
+      {initials(name)}
+    </span>
+  );
+}
 
 type Props = {
   application: Application;
+  interviews?: InterviewDate[];
   onClick: () => void;
+  compact?: boolean;
 };
 
-const RESPONSE_BADGE: Record<string, { label: string; className: string }> = {
-  Pending:     { label: 'Pending',     className: 'badge bg-yellow-100 dark:bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-500/20' },
-  Viewed:      { label: 'Viewed',      className: 'badge bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-500/20' },
-  Rejected:    { label: 'Rejected',    className: 'badge bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-500/20' },
-  Shortlisted: { label: 'Shortlisted', className: 'badge bg-sky-100 dark:bg-sky-500/15 text-sky-700 dark:text-sky-400 border border-sky-200 dark:border-sky-500/20' },
-  Offered:     { label: 'Offered',     className: 'badge bg-primary-100 dark:bg-primary-500/15 text-primary-700 dark:text-primary-400 border border-primary-200 dark:border-primary-500/20' },
-};
+export default function ApplicationCard({ application: app, interviews = [], onClick, compact }: Props) {
+  const store = useStore();
+  const stage = stageOf(app, store.stageOverrides);
+  const starred = store.starred.includes(app.id);
+  const tags = store.applicationTags
+    .filter(at => at.application_id === app.id)
+    .map(at => store.tags.find(t => t.id === at.tag_id))
+    .filter(Boolean)
+    .slice(0, 3);
 
-const FINAL_BADGE: Record<string, { label: string; className: string }> = {
-  'In Progress': { label: 'In Progress', className: 'badge bg-blue-100/50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-500/20' },
-  Rejected:      { label: 'Rejected',    className: 'badge bg-red-100/50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-500/20' },
-  Accepted:      { label: 'Accepted',    className: 'badge bg-primary-100/50 dark:bg-primary-500/10 text-primary-700 dark:text-primary-300 border border-primary-200 dark:border-primary-500/20' },
-  Withdrawn:     { label: 'Withdrawn',   className: 'badge bg-gray-100 dark:bg-dark-500/10 text-gray-700 dark:text-dark-400 border border-gray-200 dark:border-dark-500/20' },
-};
-
-function formatDate(d: string | null): string {
-  if (!d) return '—';
-  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-export default function ApplicationCard({ application: app, onClick }: Props) {
-  const responseBadge = RESPONSE_BADGE[app.response_status] ?? RESPONSE_BADGE['Pending'];
-  const finalBadge = FINAL_BADGE[app.final_status] ?? FINAL_BADGE['In Progress'];
+  const next = interviews.find(i => daysUntil(i.interview_date) !== null && (daysUntil(i.interview_date) as number) >= 0);
+  const countdown = next ? (daysUntil(next.interview_date) as number) : null;
 
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      className="card w-full text-left p-5 hover:border-primary-500/30 hover:shadow-lg hover:shadow-primary-500/5 hover:-translate-y-0.5 group"
+      onKeyDown={e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      className={`card card-hover w-full text-left cursor-pointer group relative ${compact ? 'p-3' : 'p-4'}`}
     >
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-lg bg-light-200 dark:bg-dark-700 flex items-center justify-center flex-shrink-0 group-hover:bg-primary-500/10 transition-colors">
-            <Briefcase size={18} className="text-light-600 dark:text-dark-400 group-hover:text-primary-400 transition-colors" />
-          </div>
-          <div className="min-w-0">
-            <h3 className="font-semibold text-light-900 dark:text-white text-base truncate">{app.company_name}</h3>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <Calendar size={12} className="text-light-500 dark:text-dark-500 flex-shrink-0" />
-              <span className="text-xs text-light-600 dark:text-dark-500">{formatDate(app.date_applied)}</span>
-            </div>
+      <button
+        onClick={e => {
+          e.stopPropagation();
+          toggleStar(app.id);
+        }}
+        className={`absolute top-3 right-3 transition-all ${
+          starred ? 'text-primary-500' : 'text-light-400 dark:text-dark-600 opacity-0 group-hover:opacity-100 hover:text-primary-500'
+        }`}
+        aria-label={starred ? 'Unstar' : 'Star'}
+      >
+        <Star size={14} fill={starred ? 'currentColor' : 'none'} />
+      </button>
+
+      <div className="flex items-start gap-3 pr-6">
+        <CompanyAvatar name={app.company_name} size={compact ? 32 : 40} />
+        <div className="min-w-0 flex-1">
+          <h3 className={`font-semibold text-light-900 dark:text-white truncate ${compact ? 'text-sm' : 'text-[15px]'}`}>
+            {app.company_name}
+          </h3>
+          {app.role_applied_to && (
+            <p className="text-xs text-light-600 dark:text-dark-300 truncate">{app.role_applied_to}</p>
+          )}
+          <div className="mt-1">
+            <StageDot stage={stage} />
           </div>
         </div>
-        <ChevronRight size={16} className="text-light-400 dark:text-dark-600 group-hover:text-primary-400 transition-colors flex-shrink-0 mt-1" />
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 mb-3">
-        <span className={responseBadge.className}>{responseBadge.label}</span>
-        <span className={finalBadge.className}>{finalBadge.label}</span>
-      </div>
+      {countdown !== null && (
+        <div className="mt-3 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-primary-50 dark:bg-primary-950/40 border border-primary-200 dark:border-primary-900">
+          <CalendarClock size={12} className="text-primary-600 dark:text-primary-400 flex-shrink-0" />
+          <span className="text-[11px] font-semibold text-primary-700 dark:text-primary-300 truncate">
+            {countdown === 0 ? 'Interview today' : `Interview in ${countdown}d`}
+            {next?.label ? ` · ${truncate(next.label, 24)}` : ''}
+          </span>
+        </div>
+      )}
 
-      <div className="flex items-center gap-1.5">
-        {app.interview_offered ? (
-          <CheckCircle size={14} className="text-primary-500 dark:text-primary-400" />
-        ) : (
-          <XCircle size={14} className="text-light-400 dark:text-dark-600" />
-        )}
-        <span className={`text-xs ${app.interview_offered ? 'text-primary-600 dark:text-primary-400' : 'text-light-600 dark:text-dark-500'}`}>
-          {app.interview_offered ? 'Interview offered' : 'No interview yet'}
+      {!compact && (
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          <span className={`badge ${RESPONSE_BADGE[app.response_status] || RESPONSE_BADGE.Pending}`}>
+            {app.response_status || 'Pending'}
+          </span>
+          {app.final_status && app.final_status !== 'In Progress' && (
+            <span className={`badge ${FINAL_BADGE[app.final_status] || FINAL_BADGE['In Progress']}`}>{app.final_status}</span>
+          )}
+          {tags.map(t => (
+            <span
+              key={t!.id}
+              className="badge"
+              style={{ background: `${t!.color}1f`, color: t!.color, border: `1px solid ${t!.color}40` }}
+            >
+              {t!.name}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-3 flex items-center gap-3 text-[11px] text-light-500 dark:text-dark-400 flex-wrap">
+        <span className="inline-flex items-center gap-1">
+          <Calendar size={11} /> {fmtDate(app.date_applied)}
         </span>
-        {app.company_description && (
-          <>
-            <span className="text-light-300 dark:text-dark-700 ml-1">·</span>
-            <Clock size={12} className="text-light-500 dark:text-dark-600" />
-            <span className="text-xs text-light-600 dark:text-dark-500 truncate max-w-[140px]">{app.company_description}</span>
-          </>
+        {app.platform_applied_on && (
+          <span className="inline-flex items-center gap-1 truncate max-w-[9rem]">
+            <MapPin size={11} /> {app.platform_applied_on}
+          </span>
+        )}
+        {app.salary_info && (
+          <span className="inline-flex items-center gap-1 truncate max-w-[8rem]">
+            <Wallet size={11} /> {app.salary_info}
+          </span>
         )}
       </div>
-    </button>
+    </div>
   );
 }

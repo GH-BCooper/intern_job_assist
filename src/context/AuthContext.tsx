@@ -52,7 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     if (error) {
       if (error.message.includes('already registered') || error.message.includes('already exists')) {
-        return { error: 'An account with this email already exists.' };
+        return { error: 'An account with this email already exists.', sessionCreated: false };
       }
       return { error: error.message, sessionCreated: false };
     }

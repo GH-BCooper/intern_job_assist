@@ -1,143 +1,191 @@
 import { Link } from 'react-router-dom';
-import { BookOpen, CheckCircle, ArrowRight, BarChart2, Shield, FileText } from 'lucide-react';
+import {
+  ArrowRight,
+  Bell,
+  CalendarDays,
+  Check,
+  Command,
+  Download,
+  FolderKanban,
+  Github,
+  Sparkles,
+  TrendingUp,
+  WifiOff,
+  Zap,
+} from 'lucide-react';
 
 const FEATURES = [
   {
-    icon: <BarChart2 size={20} className="text-primary-400" />,
-    title: 'Track every application',
-    desc: 'Log companies, dates, statuses, and responses — all in one organized dashboard.',
+    icon: Sparkles,
+    title: 'Scout, your AI co-pilot',
+    body: 'An assistant with genuine read and write access to your tracker. It reads your pipeline, adds applications, moves stages, schedules follow-ups, drafts emails and even changes the page you are on — through 30+ real tools, not canned replies.',
+    span: true,
   },
   {
-    icon: <CheckCircle size={20} className="text-primary-400" />,
-    title: 'Monitor interview progress',
-    desc: 'Know exactly which companies offered interviews, your final standing, and next steps.',
+    icon: FolderKanban,
+    title: 'Kanban pipeline',
+    body: 'Drag applications across Wishlist → Applied → In Review → Interviewing → Offer. Status fields stay in sync automatically.',
   },
   {
-    icon: <FileText size={20} className="text-primary-400" />,
-    title: 'Upload & manage documents',
-    desc: 'Keep track of resumes and cover letters with PDF uploads and organized storage.',
+    icon: TrendingUp,
+    title: 'Insights that mean something',
+    body: 'Conversion funnel, per-platform interview rates, 12-week cadence, activity heatmap, streaks and a momentum score.',
   },
   {
-    icon: <Shield size={20} className="text-primary-400" />,
-    title: 'Track interview dates',
-    desc: 'Record multiple interview rounds per application with countdown timers.',
+    icon: Bell,
+    title: 'Follow-ups that fire',
+    body: 'Quiet applications get flagged, reminders arrive as native browser notifications, and interviews count down.',
   },
+  {
+    icon: CalendarDays,
+    title: 'One calendar',
+    body: 'Interviews, reminders and application dates on a single month view, with a “plan my fortnight” button.',
+  },
+  {
+    icon: Command,
+    title: '⌘K everything',
+    body: 'A command palette that jumps to any application, view, page or action without lifting your hands.',
+  },
+  {
+    icon: Download,
+    title: 'Your data, portable',
+    body: 'PDF, DOCX, CSV, JSON and ZIP exports with attachments. Import back in. Nothing is locked up.',
+  },
+  {
+    icon: WifiOff,
+    title: 'Installable & offline',
+    body: 'A real PWA — install it, open it from your dock, and keep browsing your pipeline with no connection.',
+  },
+];
+
+const STACK = [
+  ['Hosting', 'Vercel Hobby'],
+  ['Database & auth', 'Supabase free tier'],
+  ['AI', 'Gemini / Groq / OpenRouter free tiers, or local Ollama'],
+  ['Charts', 'Hand-rolled SVG — no paid services'],
+  ['Notifications', 'Native browser APIs'],
 ];
 
 export default function Home() {
   return (
-    <div className="min-h-screen flex flex-col bg-light-50 dark:bg-dark-900 transition-colors">
-      {/* Hero */}
-      <section className="flex-1 flex items-center justify-center px-4 pt-24 pb-20 relative overflow-hidden">
-        {/* Background glow */}
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-primary-500/10 rounded-full blur-3xl" />
-          <div className="absolute top-1/2 left-1/4 w-[300px] h-[300px] bg-primary-700/10 rounded-full blur-3xl" />
-        </div>
+    <div className="min-h-screen pt-16">
+      {/* hero */}
+      <section className="relative overflow-hidden">
+        <div className="absolute inset-0 grid-noise opacity-60 dark:opacity-25" aria-hidden />
+        <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 pb-20 text-center">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-primary-100/80 dark:bg-primary-950/50 text-primary-700 dark:text-primary-300 border border-primary-200 dark:border-primary-900 mb-6 animate-fade-in">
+            <Zap size={12} /> Version 2 — now with an AI that actually does the work
+          </span>
 
-        <div className="relative max-w-3xl mx-auto text-center">
-          {/* Badge */}
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary-500/10 border border-primary-500/20 text-primary-600 dark:text-primary-400 text-sm font-medium mb-8">
-            <BookOpen size={14} />
-            Your internship command center
-          </div>
-
-          {/* Heading */}
-          <h1 className="font-display text-5xl sm:text-6xl lg:text-7xl font-bold text-light-900 dark:text-white leading-tight mb-6">
-            Intern<span className="text-gradient">Track</span>
+          <h1 className="text-4xl sm:text-6xl font-bold tracking-tight text-light-900 dark:text-white leading-[1.05] animate-slide-up">
+            Run your internship search
+            <br />
+            <span className="text-gradient">like a premium operation.</span>
           </h1>
 
-          <p className="text-xl sm:text-2xl text-light-600 dark:text-dark-400 font-light mb-4 leading-relaxed">
-            Your internship journey,{' '}
-            <span className="text-light-900 dark:text-dark-200 font-normal">organized and effortless.</span>
+          <p className="mt-6 text-base sm:text-lg text-light-700 dark:text-dark-200 max-w-2xl mx-auto leading-relaxed animate-slide-up">
+            Track every application, interview round and learning in one place — then hand the busywork to an AI assistant
+            that can see and change your whole tracker. Built to cost nothing to run.
           </p>
 
-          <p className="text-light-700 dark:text-dark-500 text-base mb-10 max-w-xl mx-auto">
-            Stop losing track of applications in spreadsheets and sticky notes. InternTrack
-            gives you a clean, fast dashboard to manage your entire internship search.
-          </p>
-
-          <div className="flex items-center justify-center gap-4 flex-wrap">
-            <Link
-              to="/login"
-              className="inline-flex items-center gap-2 px-8 py-3.5 bg-primary-500 hover:bg-primary-400 text-light-900 font-semibold rounded-xl transition-all duration-200 text-base shadow-lg shadow-primary-500/20 hover:shadow-primary-500/30 hover:-translate-y-0.5"
-            >
-              Log In / Try It Out
-              <ArrowRight size={18} />
+          <div className="mt-9 flex flex-wrap items-center justify-center gap-3 animate-slide-up">
+            <Link to="/register" className="btn-primary !px-6 !py-3 !text-base">
+              Start tracking free <ArrowRight size={17} />
             </Link>
-            <Link
-              to="/register"
-              className="inline-flex items-center gap-2 px-8 py-3.5 bg-light-200 dark:bg-dark-700 hover:bg-light-300 dark:hover:bg-dark-600 text-light-900 dark:text-dark-200 font-semibold rounded-xl border border-light-300 dark:border-dark-600 hover:dark:border-primary-500/30 transition-all duration-200 text-base hover:-translate-y-0.5"
-            >
-              Create Free Account
+            <Link to="/login" className="btn-secondary !px-6 !py-3 !text-base">
+              I already have an account
             </Link>
           </div>
-        </div>
-      </section>
 
-      {/* Features */}
-      <section className="py-20 px-4 bg-light-100 dark:bg-dark-800/50 border-t border-light-300 dark:border-dark-700 transition-colors">
-        <div className="max-w-5xl mx-auto">
-          <p className="text-center text-light-600 dark:text-dark-500 text-sm font-medium uppercase tracking-widest mb-3">
-            Everything you need
-          </p>
-          <h2 className="text-center text-3xl font-bold text-light-900 dark:text-white mb-12">
-            Built for serious applicants
-          </h2>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            {FEATURES.map(({ icon, title, desc }) => (
-              <div
-                key={title}
-                className="card p-6 border-light-300 dark:border-dark-600 hover:border-primary-500/20 dark:hover:border-primary-500/20 hover:shadow-lg hover:shadow-primary-500/5 transition-all"
-              >
-                <div className="w-10 h-10 rounded-xl bg-primary-500/10 flex items-center justify-center mb-4">
-                  {icon}
-                </div>
-                <h3 className="font-semibold text-light-900 dark:text-white text-base mb-2">{title}</h3>
-                <p className="text-light-600 dark:text-dark-400 text-sm leading-relaxed">{desc}</p>
-              </div>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-light-600 dark:text-dark-300">
+            {['No card, ever', 'Your AI key stays in your browser', 'Export everything, any time'].map(t => (
+              <span key={t} className="inline-flex items-center gap-1.5">
+                <Check size={12} className="text-emerald-500" /> {t}
+              </span>
             ))}
           </div>
         </div>
       </section>
 
-      {/* CTA Banner */}
-      <section className="py-16 px-4">
-        <div className="max-w-2xl mx-auto text-center">
-          <h2 className="text-3xl font-bold text-light-900 dark:text-white mb-4">Ready to get organized?</h2>
-          <p className="text-light-600 dark:text-dark-400 mb-8">
-            Create your free account and start tracking your first application in under a minute.
-          </p>
-          <Link
-            to="/register"
-            className="inline-flex items-center gap-2 px-8 py-3.5 bg-primary-500 hover:bg-primary-400 text-light-900 font-semibold rounded-xl transition-all duration-200 text-base shadow-lg shadow-primary-500/20 hover:-translate-y-0.5"
-          >
-            Get Started — It's Free
-            <ArrowRight size={18} />
-          </Link>
+      {/* features */}
+      <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-20">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {FEATURES.map(f => {
+            const Icon = f.icon;
+            return (
+              <article
+                key={f.title}
+                className={`card p-6 card-hover ${f.span ? 'sm:col-span-2 lg:col-span-3 bg-gradient-to-br from-primary-50/80 to-accent-50/40 dark:from-primary-950/25 dark:to-accent-950/15 border-primary-200 dark:border-primary-900' : ''}`}
+              >
+                <span
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center mb-4 ${
+                    f.span
+                      ? 'bg-gradient-to-br from-primary-500 to-accent-500 text-white shadow-soft'
+                      : 'bg-light-200 dark:bg-dark-800 text-primary-600 dark:text-primary-400'
+                  }`}
+                >
+                  <Icon size={18} />
+                </span>
+                <h3 className={`font-semibold text-light-900 dark:text-white mb-2 ${f.span ? 'text-lg' : 'text-base'}`}>
+                  {f.title}
+                </h3>
+                <p className={`text-light-700 dark:text-dark-200 leading-relaxed ${f.span ? 'text-sm max-w-3xl' : 'text-[13px]'}`}>
+                  {f.body}
+                </p>
+              </article>
+            );
+          })}
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="border-t border-light-300 dark:border-dark-700 py-8 px-4 transition-colors">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center justify-between flex-wrap gap-4 mb-4">
-            <div className="flex items-center gap-2">
-              <BookOpen size={16} className="text-primary-400" />
-              <span className="font-semibold text-light-900 dark:text-white text-sm">
-                Intern<span className="text-primary-400">Track</span>
-              </span>
-            </div>
-            <p className="text-light-600 dark:text-dark-600 text-sm">
-              Built to help students land great internships.
-            </p>
-          </div>
-          <div className="border-t border-light-300 dark:border-dark-700 pt-4">
-            <p className="text-light-600 dark:text-dark-600 text-xs text-center">
-              © {new Date().getFullYear()} Made with ❤️ by Brett Cooper
-            </p>
-          </div>
+      {/* cost */}
+      <section className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pb-20">
+        <div className="card p-7">
+          <h2 className="text-xl font-bold text-light-900 dark:text-white">Zero-cost by design</h2>
+          <p className="text-sm text-light-700 dark:text-dark-200 mt-1.5 mb-5 leading-relaxed">
+            Every layer runs on a permanent free tier. There is no paid dependency anywhere in the stack — that was a hard
+            constraint, not an afterthought.
+          </p>
+          <dl className="grid sm:grid-cols-2 gap-x-8 gap-y-3">
+            {STACK.map(([k, v]) => (
+              <div key={k} className="flex items-start gap-2.5 py-1.5 border-b border-light-300 dark:border-dark-800">
+                <Check size={14} className="text-emerald-500 mt-0.5 flex-shrink-0" />
+                <div className="min-w-0">
+                  <dt className="text-sm font-semibold text-light-900 dark:text-white">{k}</dt>
+                  <dd className="text-xs text-light-600 dark:text-dark-300">{v}</dd>
+                </div>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </section>
+
+      {/* cta */}
+      <section className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pb-24 text-center">
+        <h2 className="text-2xl sm:text-3xl font-bold text-light-900 dark:text-white">
+          Stop losing track. Start closing offers.
+        </h2>
+        <p className="text-sm text-light-700 dark:text-dark-200 mt-3 max-w-xl mx-auto">
+          Set it up in two minutes. Connect a free AI key whenever you feel like it — everything works without one.
+        </p>
+        <Link to="/register" className="btn-primary !px-6 !py-3 !text-base mt-7">
+          Create your tracker <ArrowRight size={17} />
+        </Link>
+      </section>
+
+      <footer className="border-t border-light-300 dark:border-dark-800 py-7 px-4">
+        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
+          <p className="text-light-500 dark:text-dark-400 text-xs">
+            © {new Date().getFullYear()} Made with ❤️ by Brett Cooper
+          </p>
+          <a
+            href="https://github.com/GH-BCooper/intern_job_assist"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 text-xs text-light-600 dark:text-dark-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+          >
+            <Github size={13} /> Source on GitHub
+          </a>
         </div>
       </footer>
     </div>

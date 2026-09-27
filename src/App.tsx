@@ -1,12 +1,25 @@
-import { Component, ReactNode } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { Component, Suspense, lazy, useEffect, type ReactNode } from 'react';
+import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { ThemeProvider } from './context/ThemeContext';
+import { ThemeProvider, useTheme } from './context/ThemeContext';
+import { DataProvider } from './context/DataContext';
+import { AIProvider } from './context/AIContext';
 import Navbar from './components/Navbar';
+import AssistantPanel from './components/AssistantPanel';
+import CommandPalette from './components/CommandPalette';
+import Toaster from './components/ui/Toaster';
 import Home from './pages/Home';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
+import { onUi } from './lib/uiBus';
+import { useNotificationEngine } from './hooks/useAlerts';
+
+// Secondary pages load on demand — the dashboard is the only route most sessions need.
+const Insights = lazy(() => import('./pages/Insights'));
+const CalendarPage = lazy(() => import('./pages/CalendarPage'));
+const Workspace = lazy(() => import('./pages/Workspace'));
+const Settings = lazy(() => import('./pages/Settings'));
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: string }> {
   state = { hasError: false, error: '' };
@@ -18,15 +31,14 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen flex items-center justify-center p-8 bg-light-50 dark:bg-dark-900">
-          <div className="max-w-md text-center">
+        <div className="min-h-screen flex items-center justify-center p-8">
+          <div className="max-w-md text-center card p-8">
             <h1 className="text-xl font-bold text-light-900 dark:text-white mb-2">Something went wrong</h1>
-            <p className="text-sm text-light-600 dark:text-dark-400 mb-4 font-mono bg-light-100 dark:bg-dark-800 p-3 rounded border border-light-300 dark:border-dark-600">{this.state.error}</p>
-            <button
-              onClick={() => window.location.reload()}
-              className="px-4 py-2 bg-primary-500 text-light-900 rounded-lg text-sm font-semibold hover:bg-primary-400"
-            >
-              Reload Page
+            <p className="text-sm text-light-600 dark:text-dark-300 mb-4 font-mono bg-light-200 dark:bg-dark-900 p-3 rounded-lg border border-light-300 dark:border-dark-700 break-words">
+              {this.state.error}
+            </p>
+            <button onClick={() => window.location.reload()} className="btn-primary">
+              Reload page
             </button>
           </div>
         </div>
@@ -36,34 +48,52 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
   }
 }
 
+function Spinner() {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="w-8 h-8 border-2 border-primary-500/30 border-t-primary-500 rounded-full animate-spin" />
+    </div>
+  );
+}
+
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-light-50 dark:bg-dark-900">
-        <div className="w-8 h-8 border-2 border-primary-500/30 border-t-primary-500 rounded-full animate-spin" />
-      </div>
-    );
-  }
+  if (loading) return <Spinner />;
   return user ? <>{children}</> : <Navigate to="/login" replace />;
 }
 
 function PublicOnlyRoute({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-light-50 dark:bg-dark-900">
-        <div className="w-8 h-8 border-2 border-primary-500/30 border-t-primary-500 rounded-full animate-spin" />
-      </div>
-    );
-  }
+  if (loading) return <Spinner />;
   return !user ? <>{children}</> : <Navigate to="/dashboard" replace />;
 }
 
-function AppRoutes() {
+/** Bridges UI-bus navigation and theme events into router/theme state. */
+function UiBridge() {
+  const navigate = useNavigate();
+  const { theme, toggleTheme } = useTheme();
+  useNotificationEngine();
+
+  useEffect(
+    () =>
+      onUi(e => {
+        if (e.type === 'navigate') navigate(e.to);
+        else if (e.type === 'set-theme' && e.theme !== theme) toggleTheme();
+      }),
+    [navigate, theme, toggleTheme],
+  );
+
+  return null;
+}
+
+function AppShell() {
+  const { user } = useAuth();
+
   return (
     <>
+      <UiBridge />
       <Navbar />
+      <Suspense fallback={<Spinner />}>
       <Routes>
         <Route path="/" element={<Home />} />
         <Route
@@ -90,8 +120,49 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route
+          path="/insights"
+          element={
+            <ProtectedRoute>
+              <Insights />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/calendar"
+          element={
+            <ProtectedRoute>
+              <CalendarPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/workspace"
+          element={
+            <ProtectedRoute>
+              <Workspace />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            <ProtectedRoute>
+              <Settings />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="*" element={<Navigate to={user ? '/dashboard' : '/'} replace />} />
       </Routes>
+      </Suspense>
+
+      {user && (
+        <>
+          <CommandPalette />
+          <AssistantPanel />
+        </>
+      )}
+      <Toaster />
     </>
   );
 }
@@ -102,7 +173,11 @@ export default function App() {
       <ThemeProvider>
         <BrowserRouter>
           <AuthProvider>
-            <AppRoutes />
+            <DataProvider>
+              <AIProvider>
+                <AppShell />
+              </AIProvider>
+            </DataProvider>
           </AuthProvider>
         </BrowserRouter>
       </ThemeProvider>

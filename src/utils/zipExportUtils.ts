@@ -9,7 +9,6 @@ import {
   BorderStyle,
   Packer,
   SectionType,
-  Footer,
   AlignmentType,
 } from "docx";
 import type {
