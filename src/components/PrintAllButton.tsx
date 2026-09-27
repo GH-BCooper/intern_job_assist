@@ -139,7 +139,7 @@ export default function PrintAllButton({ applications }: Props) {
         <div className="absolute right-0 top-full mt-2 w-52 bg-light-100 dark:bg-dark-800 border border-light-300 dark:border-dark-600 rounded-xl shadow-2xl overflow-hidden z-40 transition-colors">
           <button
             onClick={handlePDF}
-            className="w-full flex items-center gap-3 px-4 py-3 text-sm text-light-900 dark:text-slate-300 hover:bg-light-200 dark:hover:bg-dark-700 transition-colors text-left"
+            className="w-full flex items-center gap-3 px-4 py-3 text-sm text-light-900 dark:text-dark-300 hover:bg-light-200 dark:hover:bg-dark-700 transition-colors text-left"
           >
             <FileText size={15} className="text-red-500 dark:text-red-400" />
             Export All as PDF (ZIP)
@@ -147,7 +147,7 @@ export default function PrintAllButton({ applications }: Props) {
           <div className="border-t border-light-300 dark:border-dark-600" />
           <button
             onClick={handleDocx}
-            className="w-full flex items-center gap-3 px-4 py-3 text-sm text-light-900 dark:text-slate-300 hover:bg-light-200 dark:hover:bg-dark-700 transition-colors text-left"
+            className="w-full flex items-center gap-3 px-4 py-3 text-sm text-light-900 dark:text-dark-300 hover:bg-light-200 dark:hover:bg-dark-700 transition-colors text-left"
           >
             <FileDown size={15} className="text-blue-500 dark:text-blue-400" />
             Export All as Word (ZIP)

@@ -18,13 +18,13 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen flex items-center justify-center p-8 bg-gray-50">
+        <div className="min-h-screen flex items-center justify-center p-8 bg-light-50 dark:bg-dark-900">
           <div className="max-w-md text-center">
-            <h1 className="text-xl font-bold text-gray-900 mb-2">Something went wrong</h1>
-            <p className="text-sm text-gray-600 mb-4 font-mono bg-gray-100 p-3 rounded">{this.state.error}</p>
+            <h1 className="text-xl font-bold text-light-900 dark:text-white mb-2">Something went wrong</h1>
+            <p className="text-sm text-light-600 dark:text-dark-400 mb-4 font-mono bg-light-100 dark:bg-dark-800 p-3 rounded border border-light-300 dark:border-dark-600">{this.state.error}</p>
             <button
               onClick={() => window.location.reload()}
-              className="px-4 py-2 bg-green-500 text-white rounded-lg text-sm font-medium hover:bg-green-400"
+              className="px-4 py-2 bg-primary-500 text-light-900 rounded-lg text-sm font-semibold hover:bg-primary-400"
             >
               Reload Page
             </button>
@@ -41,7 +41,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-light-50 dark:bg-dark-900">
-        <div className="w-8 h-8 border-2 border-green-500/30 border-t-green-500 rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-primary-500/30 border-t-primary-500 rounded-full animate-spin" />
       </div>
     );
   }
@@ -53,7 +53,7 @@ function PublicOnlyRoute({ children }: { children: ReactNode }) {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-light-50 dark:bg-dark-900">
-        <div className="w-8 h-8 border-2 border-green-500/30 border-t-green-500 rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-primary-500/30 border-t-primary-500 rounded-full animate-spin" />
       </div>
     );
   }

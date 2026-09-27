@@ -221,7 +221,7 @@ export default function ApplicationForm({
           </h2>
           <button
             onClick={onClose}
-            className="text-light-600 dark:text-slate-400 hover:text-light-900 dark:hover:text-white transition-colors p-1 rounded"
+            className="text-light-600 dark:text-dark-400 hover:text-light-900 dark:hover:text-white transition-colors p-1 rounded"
           >
             <X size={20} />
           </button>
@@ -234,7 +234,7 @@ export default function ApplicationForm({
         >
           {/* Company Name */}
           <div>
-            <label className="block text-xs font-medium text-light-600 dark:text-slate-400 mb-1.5">
+            <label className="block text-xs font-medium text-light-600 dark:text-dark-400 mb-1.5">
               Company Name <span className="text-red-500">*</span>
             </label>
             <input
@@ -247,7 +247,7 @@ export default function ApplicationForm({
 
           {/* Role Applied To */}
           <div>
-            <label className="block text-xs font-medium text-light-600 dark:text-slate-400 mb-1.5">
+            <label className="block text-xs font-medium text-light-600 dark:text-dark-400 mb-1.5">
               Role Applied To
             </label>
             <input
@@ -260,7 +260,7 @@ export default function ApplicationForm({
 
           {/* Platform Applied On */}
           <div>
-            <label className="block text-xs font-medium text-light-600 dark:text-slate-400 mb-1.5">
+            <label className="block text-xs font-medium text-light-600 dark:text-dark-400 mb-1.5">
               Platform Applied On
             </label>
             <input
@@ -273,7 +273,7 @@ export default function ApplicationForm({
 
           {/* Resume Upload */}
           <div>
-            <label className="block text-xs font-medium text-light-600 dark:text-slate-400 mb-1.5">
+            <label className="block text-xs font-medium text-light-600 dark:text-dark-400 mb-1.5">
               Resume (PDF)
             </label>
             <div className="flex gap-2">
@@ -309,7 +309,7 @@ export default function ApplicationForm({
 
           {/* Cover Letter Upload */}
           <div>
-            <label className="block text-xs font-medium text-light-600 dark:text-slate-400 mb-1.5">
+            <label className="block text-xs font-medium text-light-600 dark:text-dark-400 mb-1.5">
               Cover Letter (PDF)
             </label>
             <div className="flex gap-2">
@@ -348,7 +348,7 @@ export default function ApplicationForm({
           {/* Status row */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-light-600 dark:text-slate-400 mb-1.5">
+              <label className="block text-xs font-medium text-light-600 dark:text-dark-400 mb-1.5">
                 Response / Status
               </label>
               <select
@@ -364,7 +364,7 @@ export default function ApplicationForm({
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-light-600 dark:text-slate-400 mb-1.5">
+              <label className="block text-xs font-medium text-light-600 dark:text-dark-400 mb-1.5">
                 Final Status
               </label>
               <select
@@ -384,14 +384,14 @@ export default function ApplicationForm({
           {/* Company Description with Parse */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-medium text-light-600 dark:text-slate-400">
+              <label className="block text-xs font-medium text-light-600 dark:text-dark-400">
                 Company Description
               </label>
               <button
                 type="button"
                 onClick={() => handleParseText("company_description")}
                 disabled={saving}
-                className="text-xs text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 font-medium flex items-center gap-1"
+                className="text-xs text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium flex items-center gap-1"
               >
                 <FileUp size={12} /> Parse PDF
               </button>
@@ -408,7 +408,7 @@ export default function ApplicationForm({
           {/* Interview Offered & Date Applied */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-light-600 dark:text-slate-400 mb-1.5">
+              <label className="block text-xs font-medium text-light-600 dark:text-dark-400 mb-1.5">
                 Date Applied
               </label>
               <input
@@ -428,14 +428,14 @@ export default function ApplicationForm({
                     onChange={(e) => set("interview_offered", e.target.checked)}
                   />
                   <div
-                    className={`w-10 h-6 rounded-full transition-colors ${form.interview_offered ? "bg-green-500" : "bg-light-300 dark:bg-dark-600 border border-light-400 dark:border-dark-500"}`}
+                    className={`w-10 h-6 rounded-full transition-colors ${form.interview_offered ? "bg-primary-500" : "bg-light-300 dark:bg-dark-600 border border-light-400 dark:border-dark-500"}`}
                   >
                     <div
                       className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${form.interview_offered ? "translate-x-4" : ""}`}
                     />
                   </div>
                 </div>
-                <span className="text-sm text-light-700 dark:text-slate-300 group-hover:text-light-900 dark:group-hover:text-white transition-colors">
+                <span className="text-sm text-light-700 dark:text-dark-300 group-hover:text-light-900 dark:group-hover:text-white transition-colors">
                   Interview Offered
                 </span>
               </label>
@@ -452,7 +452,7 @@ export default function ApplicationForm({
                 <button
                   type="button"
                   onClick={addInterview}
-                  className="text-xs bg-green-500/10 text-green-600 dark:text-green-400 px-2 py-1 rounded flex items-center gap-1 hover:bg-green-500/20 transition-colors"
+                  className="text-xs bg-primary-500/10 text-primary-600 dark:text-primary-400 px-2 py-1 rounded flex items-center gap-1 hover:bg-primary-500/20 transition-colors"
                 >
                   <Plus size={12} /> Add Date
                 </button>
@@ -491,14 +491,14 @@ export default function ApplicationForm({
           {/* Salary Info with Parse */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-medium text-light-600 dark:text-slate-400">
+              <label className="block text-xs font-medium text-light-600 dark:text-dark-400">
                 Salary Info / Questions to Ask
               </label>
               <button
                 type="button"
                 onClick={() => handleParseText("salary_info")}
                 disabled={saving}
-                className="text-xs text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 font-medium flex items-center gap-1"
+                className="text-xs text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium flex items-center gap-1"
               >
                 <FileUp size={12} /> Parse PDF
               </button>
@@ -515,14 +515,14 @@ export default function ApplicationForm({
           {/* Tasks to Complete with Parse */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-medium text-light-600 dark:text-slate-400">
+              <label className="block text-xs font-medium text-light-600 dark:text-dark-400">
                 Tasks to Complete / Learn for Interview
               </label>
               <button
                 type="button"
                 onClick={() => handleParseText("tasks_to_complete")}
                 disabled={saving}
-                className="text-xs text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 font-medium flex items-center gap-1"
+                className="text-xs text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium flex items-center gap-1"
               >
                 <FileUp size={12} /> Parse PDF
               </button>
@@ -539,14 +539,14 @@ export default function ApplicationForm({
           {/* Interview Questions with Parse */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-medium text-light-600 dark:text-slate-400">
+              <label className="block text-xs font-medium text-light-600 dark:text-dark-400">
                 Interview Questions
               </label>
               <button
                 type="button"
                 onClick={() => handleParseText("interview_questions")}
                 disabled={saving}
-                className="text-xs text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 font-medium flex items-center gap-1"
+                className="text-xs text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium flex items-center gap-1"
               >
                 <FileUp size={12} /> Parse PDF
               </button>
@@ -568,7 +568,7 @@ export default function ApplicationForm({
               </h3>
 
               <div>
-                <label className="block text-xs font-medium text-light-600 dark:text-slate-400 mb-1.5">
+                <label className="block text-xs font-medium text-light-600 dark:text-dark-400 mb-1.5">
                   Learnings from Interview
                 </label>
                 <textarea
@@ -586,7 +586,7 @@ export default function ApplicationForm({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-light-600 dark:text-slate-400 mb-1.5">
+                <label className="block text-xs font-medium text-light-600 dark:text-dark-400 mb-1.5">
                   Questions They Asked
                 </label>
                 <textarea

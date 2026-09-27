@@ -74,15 +74,15 @@ export default function Register() {
         {/* Logo */}
         <div className="text-center mb-8">
           <Link to="/" className="inline-flex items-center gap-2 group">
-            <div className="w-10 h-10 bg-green-500/10 rounded-xl flex items-center justify-center group-hover:bg-green-500/20 transition-colors">
-              <BookOpen size={20} className="text-green-400" />
+            <div className="w-10 h-10 bg-primary-500/10 rounded-xl flex items-center justify-center group-hover:bg-primary-500/20 transition-colors">
+              <BookOpen size={20} className="text-primary-400" />
             </div>
             <span className="font-semibold text-light-900 dark:text-white text-2xl">
-              Intern<span className="text-green-400">Track</span>
+              Intern<span className="text-primary-400">Track</span>
             </span>
           </Link>
           <h1 className="mt-6 text-2xl font-bold text-light-900 dark:text-white">Create your account</h1>
-          <p className="text-light-600 dark:text-slate-400 text-sm mt-1">Free forever -- start tracking in seconds</p>
+          <p className="text-light-600 dark:text-dark-400 text-sm mt-1">Free forever -- start tracking in seconds</p>
         </div>
 
         {/* Card */}
@@ -93,7 +93,7 @@ export default function Register() {
               type="button"
               onClick={handleGoogle}
               disabled={googleLoading}
-              className="w-full flex items-center justify-center gap-3 px-5 py-3 bg-white dark:bg-dark-700 border border-light-300 dark:border-dark-600 rounded-lg text-light-900 dark:text-slate-200 font-medium text-sm hover:bg-light-100 dark:hover:bg-dark-600 hover:border-light-400 dark:hover:border-dark-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full flex items-center justify-center gap-3 px-5 py-3 bg-white dark:bg-dark-700 border border-light-300 dark:border-dark-600 rounded-lg text-light-900 dark:text-dark-200 font-medium text-sm hover:bg-light-100 dark:hover:bg-dark-600 hover:border-light-400 dark:hover:border-dark-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {googleLoading ? <Loader2 size={18} className="animate-spin" /> : <GoogleIcon />}
               Sign up with Google
@@ -102,12 +102,12 @@ export default function Register() {
             {/* Divider */}
             <div className="relative flex items-center gap-3">
               <div className="flex-1 h-px bg-light-300 dark:bg-dark-600" />
-              <span className="text-xs text-light-500 dark:text-slate-500 font-medium">or</span>
+              <span className="text-xs text-light-500 dark:text-dark-500 font-medium">or</span>
               <div className="flex-1 h-px bg-light-300 dark:bg-dark-600" />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-light-600 dark:text-slate-400 mb-1.5">Full Name</label>
+              <label className="block text-xs font-medium text-light-600 dark:text-dark-400 mb-1.5">Full Name</label>
               <input
                 className="input-field"
                 placeholder="Your name"
@@ -118,7 +118,7 @@ export default function Register() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-light-600 dark:text-slate-400 mb-1.5">Email Address</label>
+              <label className="block text-xs font-medium text-light-600 dark:text-dark-400 mb-1.5">Email Address</label>
               <input
                 type="email"
                 className="input-field"
@@ -130,7 +130,7 @@ export default function Register() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-light-600 dark:text-slate-400 mb-1.5">Password</label>
+              <label className="block text-xs font-medium text-light-600 dark:text-dark-400 mb-1.5">Password</label>
               <div className="relative">
                 <input
                   type={showPw ? 'text' : 'password'}
@@ -143,7 +143,7 @@ export default function Register() {
                 <button
                   type="button"
                   onClick={() => setShowPw(v => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-light-500 dark:text-slate-500 hover:text-light-900 dark:hover:text-slate-300 transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-light-500 dark:text-dark-500 hover:text-light-900 dark:hover:text-dark-300 transition-colors"
                 >
                   {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
@@ -151,7 +151,7 @@ export default function Register() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-light-600 dark:text-slate-400 mb-1.5">Confirm Password</label>
+              <label className="block text-xs font-medium text-light-600 dark:text-dark-400 mb-1.5">Confirm Password</label>
               <input
                 type={showPw ? 'text' : 'password'}
                 className="input-field"
@@ -169,7 +169,7 @@ export default function Register() {
             )}
 
             {success && (
-              <div className="text-green-700 dark:text-green-400 text-sm bg-green-100 dark:bg-green-500/10 border border-green-200 dark:border-green-500/20 rounded-lg px-4 py-2.5">
+              <div className="text-primary-700 dark:text-primary-400 text-sm bg-primary-100 dark:bg-primary-500/10 border border-primary-200 dark:border-primary-500/20 rounded-lg px-4 py-2.5">
                 {success}
               </div>
             )}
@@ -181,9 +181,9 @@ export default function Register() {
           </form>
         </div>
 
-        <p className="text-center text-light-600 dark:text-slate-500 text-sm mt-6">
+        <p className="text-center text-light-600 dark:text-dark-500 text-sm mt-6">
           Already have an account?{' '}
-          <Link to="/login" className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 font-medium transition-colors">
+          <Link to="/login" className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium transition-colors">
             Sign in
           </Link>
         </p>

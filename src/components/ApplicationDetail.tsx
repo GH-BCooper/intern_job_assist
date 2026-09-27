@@ -19,14 +19,14 @@ const RESPONSE_BADGE: Record<string, string> = {
   Viewed: 'badge bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-500/20',
   Rejected: 'badge bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-500/20',
   Shortlisted: 'badge bg-sky-100 dark:bg-sky-500/15 text-sky-700 dark:text-sky-400 border border-sky-200 dark:border-sky-500/20',
-  Offered: 'badge bg-green-100 dark:bg-green-500/15 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-500/20',
+  Offered: 'badge bg-primary-100 dark:bg-primary-500/15 text-primary-700 dark:text-primary-400 border border-primary-200 dark:border-primary-500/20',
 };
 
 const FINAL_BADGE: Record<string, string> = {
   'In Progress': 'badge bg-blue-100/50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-500/20',
   Rejected: 'badge bg-red-100/50 dark:bg-red-500/10 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-500/20',
-  Accepted: 'badge bg-green-100/50 dark:bg-green-500/10 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-500/20',
-  Withdrawn: 'badge bg-gray-100 dark:bg-slate-500/10 text-gray-700 dark:text-slate-400 border border-gray-200 dark:border-slate-500/20',
+  Accepted: 'badge bg-primary-100/50 dark:bg-primary-500/10 text-primary-700 dark:text-primary-300 border border-primary-200 dark:border-primary-500/20',
+  Withdrawn: 'badge bg-gray-100 dark:bg-dark-500/10 text-gray-700 dark:text-dark-400 border border-gray-200 dark:border-dark-500/20',
 };
 
 function formatDate(d: string | null): string {
@@ -41,7 +41,7 @@ function daysRemaining(date: string): { label: string; color: string } {
 
   if (diff < 0) return { label: `${Math.abs(diff)} days ago`, color: 'text-red-600 dark:text-red-400' };
   if (diff === 0) return { label: 'Today!', color: 'text-orange-600 dark:text-orange-400' };
-  return { label: `${diff} days remaining`, color: 'text-green-600 dark:text-green-400' };
+  return { label: `${diff} days remaining`, color: 'text-primary-600 dark:text-primary-400' };
 }
 
 function Field({ label, value }: { label: string; value: string | boolean | null }) {
@@ -49,8 +49,8 @@ function Field({ label, value }: { label: string; value: string | boolean | null
   if (display === '—') return null;
   return (
     <div className="space-y-1">
-      <p className="text-xs font-medium text-light-600 dark:text-slate-500 uppercase tracking-wider">{label}</p>
-      <p className="text-sm text-light-900 dark:text-slate-200 leading-relaxed whitespace-pre-line">{display}</p>
+      <p className="text-xs font-medium text-light-600 dark:text-dark-500 uppercase tracking-wider">{label}</p>
+      <p className="text-sm text-light-900 dark:text-dark-200 leading-relaxed whitespace-pre-line">{display}</p>
     </div>
   );
 }
@@ -134,18 +134,18 @@ export default function ApplicationDetail({ application: app, onClose, onEdit, o
         <div className="px-6 py-5 border-b border-light-300 dark:border-dark-600 flex-shrink-0">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-xl bg-green-500/10 flex items-center justify-center flex-shrink-0">
-                <Briefcase size={18} className="text-green-400" />
+              <div className="w-10 h-10 rounded-xl bg-primary-500/10 flex items-center justify-center flex-shrink-0">
+                <Briefcase size={18} className="text-primary-400" />
               </div>
               <div className="min-w-0">
                 <h2 className="font-semibold text-light-900 dark:text-white text-xl truncate">{app.company_name}</h2>
                 <div className="flex items-center gap-1.5 mt-1">
-                  <Calendar size={12} className="text-light-600 dark:text-slate-500" />
-                  <span className="text-xs text-light-600 dark:text-slate-500">{formatDate(app.date_applied)}</span>
+                  <Calendar size={12} className="text-light-600 dark:text-dark-500" />
+                  <span className="text-xs text-light-600 dark:text-dark-500">{formatDate(app.date_applied)}</span>
                 </div>
               </div>
             </div>
-            <button onClick={onClose} className="text-light-600 dark:text-slate-400 hover:text-light-900 dark:hover:text-white transition-colors p-1 rounded flex-shrink-0">
+            <button onClick={onClose} className="text-light-600 dark:text-dark-400 hover:text-light-900 dark:hover:text-white transition-colors p-1 rounded flex-shrink-0">
               <X size={20} />
             </button>
           </div>
@@ -158,11 +158,11 @@ export default function ApplicationDetail({ application: app, onClose, onEdit, o
               {app.final_status}
             </span>
             {app.interview_offered ? (
-              <span className="badge bg-green-100 dark:bg-green-500/10 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-500/20">
+              <span className="badge bg-primary-100 dark:bg-primary-500/10 text-primary-700 dark:text-primary-300 border border-primary-200 dark:border-primary-500/20">
                 <CheckCircle size={11} className="mr-1" /> Interview Offered
               </span>
             ) : (
-              <span className="badge bg-gray-100 dark:bg-slate-500/10 text-gray-700 dark:text-slate-400 border border-gray-200 dark:border-slate-500/20">
+              <span className="badge bg-gray-100 dark:bg-dark-500/10 text-gray-700 dark:text-dark-400 border border-gray-200 dark:border-dark-500/20">
                 <XCircle size={11} className="mr-1" /> No Interview
               </span>
             )}
@@ -174,7 +174,7 @@ export default function ApplicationDetail({ application: app, onClose, onEdit, o
           {/* Files */}
           {(resumeUrl || coverLetterUrl) && (
             <div className="space-y-2 border-b border-light-300 dark:border-dark-600 pb-4">
-              <p className="text-xs font-medium text-light-600 dark:text-slate-500 uppercase">Documents</p>
+              <p className="text-xs font-medium text-light-600 dark:text-dark-500 uppercase">Documents</p>
               <div className="flex flex-col gap-2">
                 {resumeUrl && (
                   <a
@@ -203,7 +203,7 @@ export default function ApplicationDetail({ application: app, onClose, onEdit, o
           {/* Interview Dates */}
           {interviews.length > 0 && (
             <div className="space-y-2 border-b border-light-300 dark:border-dark-600 pb-4">
-              <p className="text-xs font-medium text-light-600 dark:text-slate-500 uppercase">Interview Dates</p>
+              <p className="text-xs font-medium text-light-600 dark:text-dark-500 uppercase">Interview Dates</p>
               <div className="space-y-1.5">
                 {interviews.map(iv => {
                   const { label, color } = daysRemaining(iv.interview_date);
@@ -211,7 +211,7 @@ export default function ApplicationDetail({ application: app, onClose, onEdit, o
                     <div key={iv.id} className="flex items-center justify-between p-2 bg-light-200 dark:bg-dark-700 rounded-lg">
                       <div>
                         <p className="text-sm font-medium text-light-900 dark:text-white">{iv.label}</p>
-                        <p className="text-xs text-light-600 dark:text-slate-500">{formatDate(iv.interview_date)}</p>
+                        <p className="text-xs text-light-600 dark:text-dark-500">{formatDate(iv.interview_date)}</p>
                       </div>
                       <p className={`text-xs font-semibold ${color}`}>{label}</p>
                     </div>
@@ -239,14 +239,14 @@ export default function ApplicationDetail({ application: app, onClose, onEdit, o
               <h3 className="font-semibold text-light-900 dark:text-white text-sm">Interview Learnings</h3>
               {learnings.learnings && (
                 <div className="space-y-1">
-                  <p className="text-xs font-medium text-light-600 dark:text-slate-500 uppercase">Learnings</p>
-                  <p className="text-sm text-light-900 dark:text-slate-200 leading-relaxed whitespace-pre-line">{learnings.learnings}</p>
+                  <p className="text-xs font-medium text-light-600 dark:text-dark-500 uppercase">Learnings</p>
+                  <p className="text-sm text-light-900 dark:text-dark-200 leading-relaxed whitespace-pre-line">{learnings.learnings}</p>
                 </div>
               )}
               {learnings.questions_asked && (
                 <div className="space-y-1">
-                  <p className="text-xs font-medium text-light-600 dark:text-slate-500 uppercase">Questions Asked</p>
-                  <p className="text-sm text-light-900 dark:text-slate-200 leading-relaxed whitespace-pre-line">{learnings.questions_asked}</p>
+                  <p className="text-xs font-medium text-light-600 dark:text-dark-500 uppercase">Questions Asked</p>
+                  <p className="text-sm text-light-900 dark:text-dark-200 leading-relaxed whitespace-pre-line">{learnings.questions_asked}</p>
                 </div>
               )}
             </div>

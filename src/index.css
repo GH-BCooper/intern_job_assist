@@ -27,17 +27,17 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply bg-light-400 dark:bg-dark-700 hover:bg-green-400 rounded transition-colors;
+    @apply bg-light-400 dark:bg-dark-600 hover:bg-primary-500 rounded transition-colors;
   }
 }
 
 @layer components {
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-green-500 hover:bg-green-400 text-white font-medium rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed text-sm;
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-primary-500 hover:bg-primary-400 text-light-900 dark:text-dark-950 font-semibold rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed text-sm;
   }
 
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-light-200 hover:bg-light-300 dark:bg-dark-700 dark:hover:bg-dark-600 text-light-900 dark:text-slate-200 font-medium rounded-lg border border-light-300 dark:border-dark-600 hover:dark:border-green-500/30 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed text-sm;
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-light-200 hover:bg-light-300 dark:bg-dark-700 dark:hover:bg-dark-600 text-light-900 dark:text-dark-200 font-medium rounded-lg border border-light-300 dark:border-dark-600 hover:dark:border-primary-500/30 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed text-sm;
   }
 
   .btn-danger {
@@ -45,7 +45,7 @@
   }
 
   .input-field {
-    @apply w-full px-4 py-2.5 bg-light-100 dark:bg-dark-700 border border-light-300 dark:border-dark-600 rounded-lg text-light-900 dark:text-slate-100 placeholder-light-500 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-green-500/40 focus:dark:ring-green-500/40 focus:border-green-500/60 dark:focus:border-green-500/60 transition-all duration-200 text-sm;
+    @apply w-full px-4 py-2.5 bg-light-100 dark:bg-dark-700 border border-light-300 dark:border-dark-600 rounded-lg text-light-900 dark:text-dark-100 placeholder-light-500 dark:placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-primary-500/40 focus:dark:ring-primary-400/40 focus:border-primary-500/60 dark:focus:border-primary-400/60 transition-all duration-200 text-sm;
   }
 
   .card {
@@ -59,13 +59,13 @@
 
 @layer utilities {
   .text-gradient {
-    background: linear-gradient(135deg, #22c55e, #16a34a);
+    background: linear-gradient(135deg, #FFCB56, #FF7E7E);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
 
-  .glow-green {
-    box-shadow: 0 0 20px rgba(34, 197, 94, 0.15);
+  .glow-primary {
+    box-shadow: 0 0 20px rgba(255, 162, 89, 0.2);
   }
 }

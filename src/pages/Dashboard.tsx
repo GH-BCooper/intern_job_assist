@@ -378,7 +378,7 @@ export default function Dashboard() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-light-900 dark:text-white">Dashboard</h1>
-            <p className="text-light-600 dark:text-slate-400 text-sm mt-0.5">
+            <p className="text-light-600 dark:text-dark-400 text-sm mt-0.5">
               {user?.user_metadata?.name
                 ? `Welcome back, ${user.user_metadata.name.split(' ')[0]}`
                 : 'Your internship applications'}
@@ -397,12 +397,12 @@ export default function Dashboard() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           {[
             { label: 'Total', value: stats.total, color: 'text-light-900 dark:text-white' },
-            { label: 'Interviews', value: stats.interviews, color: 'text-green-600 dark:text-green-400' },
+            { label: 'Interviews', value: stats.interviews, color: 'text-primary-600 dark:text-primary-400' },
             { label: 'Offers / Accepted', value: stats.offered, color: 'text-sky-600 dark:text-sky-400' },
             { label: 'Rejected', value: stats.rejected, color: 'text-red-600 dark:text-red-400' },
           ].map(({ label, value, color }) => (
             <div key={label} className="card p-4 border-light-300 dark:border-dark-600">
-              <p className="text-xs text-light-600 dark:text-slate-500 mb-1">{label}</p>
+              <p className="text-xs text-light-600 dark:text-dark-500 mb-1">{label}</p>
               <p className={`text-2xl font-bold ${color}`}>{value}</p>
             </div>
           ))}
@@ -411,7 +411,7 @@ export default function Dashboard() {
         {/* Toolbar */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-6">
           <div className="relative flex-1">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-light-500 dark:text-slate-500 pointer-events-none" />
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-light-500 dark:text-dark-500 pointer-events-none" />
             <input
               className="input-field pl-9"
               placeholder="Search by company name…"
@@ -422,7 +422,7 @@ export default function Dashboard() {
 
           <div className="flex items-center gap-3">
             <div className="relative">
-              <SlidersHorizontal size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-light-500 dark:text-slate-500 pointer-events-none" />
+              <SlidersHorizontal size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-light-500 dark:text-dark-500 pointer-events-none" />
               <select
                 className="input-field pl-9 pr-4 appearance-none min-w-[160px]"
                 value={statusFilter}
@@ -435,7 +435,7 @@ export default function Dashboard() {
             </div>
 
             <div className="relative">
-              <Briefcase size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-light-500 dark:text-slate-500 pointer-events-none" />
+              <Briefcase size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-light-500 dark:text-dark-500 pointer-events-none" />
               <select
                 className="input-field pl-9 pr-4 appearance-none min-w-[160px]"
                 value={platformFilter}
@@ -451,7 +451,7 @@ export default function Dashboard() {
             </div>
 
             <div className="relative">
-              <ArrowUpDown size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-light-500 dark:text-slate-500 pointer-events-none" />
+              <ArrowUpDown size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-light-500 dark:text-dark-500 pointer-events-none" />
               <select
                 className="input-field pl-9 pr-4 appearance-none min-w-[200px]"
                 value={sortBy}
@@ -470,7 +470,7 @@ export default function Dashboard() {
         {/* Content */}
         {loading ? (
           <div className="flex items-center justify-center py-24">
-            <Loader2 size={32} className="animate-spin text-green-400" />
+            <Loader2 size={32} className="animate-spin text-primary-400" />
           </div>
         ) : error ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
@@ -482,12 +482,12 @@ export default function Dashboard() {
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-center">
             <div className="w-16 h-16 rounded-2xl bg-light-200 dark:bg-dark-700 flex items-center justify-center mb-4">
-              <Briefcase size={28} className="text-light-400 dark:text-slate-600" />
+              <Briefcase size={28} className="text-light-400 dark:text-dark-600" />
             </div>
             {applications.length === 0 ? (
               <>
                 <h3 className="text-light-900 dark:text-white font-semibold text-lg mb-2">No applications yet</h3>
-                <p className="text-light-600 dark:text-slate-500 text-sm mb-6 max-w-sm">
+                <p className="text-light-600 dark:text-dark-500 text-sm mb-6 max-w-sm">
                   Start tracking your internship search by adding your first application.
                 </p>
                 <button
@@ -500,7 +500,7 @@ export default function Dashboard() {
             ) : (
               <>
                 <h3 className="text-light-900 dark:text-white font-semibold text-lg mb-2">No results found</h3>
-                <p className="text-light-600 dark:text-slate-500 text-sm">
+                <p className="text-light-600 dark:text-dark-500 text-sm">
                   Try adjusting your search or filter.
                 </p>
               </>
@@ -541,7 +541,7 @@ export default function Dashboard() {
       {/* Footer */}
       <footer className="border-t border-light-300 dark:border-dark-700 py-6 px-4 mt-12 transition-colors">
         <div className="max-w-7xl mx-auto text-center">
-          <p className="text-light-600 dark:text-slate-600 text-xs">
+          <p className="text-light-600 dark:text-dark-600 text-xs">
             © {new Date().getFullYear()} Made with ❤️ by Brett Cooper
           </p>
         </div>

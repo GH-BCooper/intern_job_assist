@@ -19,18 +19,18 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           <Link to="/" className="flex items-center gap-2.5 group">
-            <div className="w-8 h-8 bg-green-500/10 rounded-lg flex items-center justify-center group-hover:bg-green-500/20 transition-colors">
-              <BookOpen size={18} className="text-green-400" />
+            <div className="w-8 h-8 bg-primary-500/10 rounded-lg flex items-center justify-center group-hover:bg-primary-500/20 transition-colors">
+              <BookOpen size={18} className="text-primary-400" />
             </div>
             <span className="font-semibold text-light-900 dark:text-white text-lg tracking-tight">
-              Intern<span className="text-green-400">Track</span>
+              Intern<span className="text-primary-400">Track</span>
             </span>
           </Link>
 
           <div className="flex items-center gap-3">
             {user ? (
               <>
-                <span className="hidden sm:block text-light-600 dark:text-slate-400 text-sm">
+                <span className="hidden sm:block text-light-600 dark:text-dark-400 text-sm">
                   {user.user_metadata?.name || user.email}
                 </span>
                 {location.pathname !== '/dashboard' && (
@@ -48,7 +48,7 @@ export default function Navbar() {
               <>
                 <Link
                   to="/login"
-                  className="text-light-700 dark:text-slate-300 hover:text-light-900 dark:hover:text-white text-sm font-medium transition-colors px-3 py-2"
+                  className="text-light-700 dark:text-dark-300 hover:text-light-900 dark:hover:text-white text-sm font-medium transition-colors px-3 py-2"
                 >
                   Log In
                 </Link>
@@ -60,7 +60,7 @@ export default function Navbar() {
 
             <button
               onClick={toggleTheme}
-              className="p-2 rounded-lg text-light-700 dark:text-slate-400 hover:text-light-900 dark:hover:text-white hover:bg-light-200 dark:hover:bg-dark-700 transition-colors"
+              className="p-2 rounded-lg text-light-700 dark:text-dark-400 hover:text-light-900 dark:hover:text-white hover:bg-light-200 dark:hover:bg-dark-700 transition-colors"
               title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
             >
               {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
