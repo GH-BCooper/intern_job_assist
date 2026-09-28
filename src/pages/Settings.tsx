@@ -19,6 +19,7 @@ import {
   Zap,
 } from 'lucide-react';
 import PageShell from '../components/PageShell';
+import AccountSecurity from '../components/AccountSecurity';
 import { useStore } from '../hooks/useStore';
 import { useTheme } from '../context/ThemeContext';
 import { useData } from '../context/DataContext';
@@ -147,6 +148,8 @@ export default function Settings() {
   return (
     <PageShell title="Settings" subtitle={user?.email || 'Your preferences, stored on this device.'}>
       <div className="grid lg:grid-cols-2 gap-4">
+        <AccountSecurity />
+
         <Section
           icon={Sparkles}
           title="AI assistant"

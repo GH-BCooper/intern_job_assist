@@ -11,6 +11,7 @@ import Toaster from './components/ui/Toaster';
 import Home from './pages/Home';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
 import { onUi } from './lib/uiBus';
 import { useNotificationEngine } from './hooks/useAlerts';
@@ -115,6 +116,7 @@ function AppShell() {
             </PublicOnlyRoute>
           }
         />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route
           path="/dashboard"
           element={

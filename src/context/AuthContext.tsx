@@ -2,14 +2,62 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
+type Result = { error: string | null };
+
+function mapError(message: string): string {
+  const m = message.toLowerCase();
+  if (m.includes('already registered') || m.includes('already exists')) {
+    return 'An account with this email already exists.';
+  }
+  if (m.includes('invalid login credentials')) return 'Invalid email or password.';
+  if (m.includes('email not confirmed')) return 'Please verify your email before signing in.';
+  if (m.includes('token has expired') || m.includes('otp_expired') || m.includes('expired')) {
+    return 'That code has expired. Request a new one.';
+  }
+  if (m.includes('invalid otp') || m.includes('invalid token') || m.includes('token is invalid')) {
+    return 'That code is incorrect. Double-check it and try again.';
+  }
+  if (m.includes('same_password')) return 'That is your current password. Choose a different one.';
+  if (m.includes('rate limit') || m.includes('too many')) {
+    return 'Too many attempts. Wait a moment before trying again.';
+  }
+  return message;
+}
+
 type AuthContextType = {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  signUp: (email: string, password: string, name: string) => Promise<{ error: string | null; sessionCreated: boolean }>;
-  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
-  signInWithGoogle: () => Promise<{ error: string | null }>;
+
+  // core auth
+  signUp: (email: string, password: string, name: string) => Promise<Result & { sessionCreated: boolean }>;
+  signIn: (email: string, password: string) => Promise<Result>;
+  signInWithGoogle: () => Promise<Result>;
   signOut: () => Promise<void>;
+  signOutEverywhere: () => Promise<void>;
+
+  // signup OTP verification
+  verifySignupOtp: (email: string, token: string) => Promise<Result>;
+  resendSignupOtp: (email: string) => Promise<Result>;
+
+  // forgot / reset password (OTP-based recovery)
+  requestPasswordReset: (email: string) => Promise<Result>;
+  verifyPasswordResetOtp: (email: string, token: string) => Promise<Result>;
+  resendPasswordResetOtp: (email: string) => Promise<Result>;
+  setNewPassword: (newPassword: string) => Promise<Result>;
+
+  // change email while signed in — dual OTP (current inbox + new inbox)
+  requestEmailChange: (newEmail: string) => Promise<Result>;
+  verifyEmailChangeOtp: (email: string, token: string) => Promise<Result>;
+  resendEmailChangeOtp: () => Promise<Result>;
+  cancelEmailChange: () => void;
+
+  // change password while signed in — reauthentication OTP
+  requestPasswordChangeOtp: () => Promise<Result>;
+  confirmPasswordChange: (token: string, newPassword: string) => Promise<Result>;
+
+  // profile
+  updateDisplayName: (name: string) => Promise<Result>;
 };
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -44,29 +92,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const signUp = async (email: string, password: string, name: string): Promise<{ error: string | null; sessionCreated: boolean }> => {
+  const signUp = async (email: string, password: string, name: string): Promise<Result & { sessionCreated: boolean }> => {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: { data: { name } },
     });
-    if (error) {
-      if (error.message.includes('already registered') || error.message.includes('already exists')) {
-        return { error: 'An account with this email already exists.', sessionCreated: false };
-      }
-      return { error: error.message, sessionCreated: false };
-    }
+    if (error) return { error: mapError(error.message), sessionCreated: false };
     return { error: null, sessionCreated: !!data.session };
   };
 
-  const signIn = async (email: string, password: string): Promise<{ error: string | null }> => {
+  const signIn = async (email: string, password: string): Promise<Result> => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      if (error.message.includes('Invalid login credentials')) {
-        return { error: 'Invalid email or password.' };
-      }
-      return { error: error.message };
-    }
+    if (error) return { error: mapError(error.message) };
     return { error: null };
   };
 
@@ -74,7 +112,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
   };
 
-  const signInWithGoogle = async (): Promise<{ error: string | null }> => {
+  const signOutEverywhere = async () => {
+    await supabase.auth.signOut({ scope: 'global' });
+  };
+
+  const signInWithGoogle = async (): Promise<Result> => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
@@ -85,8 +127,125 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: null };
   };
 
+  // --- signup OTP ---
+
+  const verifySignupOtp = async (email: string, token: string): Promise<Result> => {
+    const { error } = await supabase.auth.verifyOtp({ email, token, type: 'signup' });
+    if (error) return { error: mapError(error.message) };
+    return { error: null };
+  };
+
+  const resendSignupOtp = async (email: string): Promise<Result> => {
+    const { error } = await supabase.auth.resend({ type: 'signup', email });
+    if (error) return { error: mapError(error.message) };
+    return { error: null };
+  };
+
+  // --- forgot / reset password ---
+
+  const requestPasswordReset = async (email: string): Promise<Result> => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    if (error) return { error: mapError(error.message) };
+    return { error: null };
+  };
+
+  const verifyPasswordResetOtp = async (email: string, token: string): Promise<Result> => {
+    const { error } = await supabase.auth.verifyOtp({ email, token, type: 'recovery' });
+    if (error) return { error: mapError(error.message) };
+    return { error: null };
+  };
+
+  const resendPasswordResetOtp = async (email: string): Promise<Result> => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    if (error) return { error: mapError(error.message) };
+    return { error: null };
+  };
+
+  const setNewPassword = async (newPassword: string): Promise<Result> => {
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) return { error: mapError(error.message) };
+    return { error: null };
+  };
+
+  // --- change email (secure, dual OTP) ---
+
+  const requestEmailChange = async (newEmail: string): Promise<Result> => {
+    const { error } = await supabase.auth.updateUser({ email: newEmail });
+    if (error) return { error: mapError(error.message) };
+    return { error: null };
+  };
+
+  const verifyEmailChangeOtp = async (email: string, token: string): Promise<Result> => {
+    const { error } = await supabase.auth.verifyOtp({ email, token, type: 'email_change' });
+    if (error) return { error: mapError(error.message) };
+    const { data } = await supabase.auth.getUser();
+    if (data.user) setUser(data.user);
+    return { error: null };
+  };
+
+  const resendEmailChangeOtp = async (): Promise<Result> => {
+    const { data } = await supabase.auth.getUser();
+    const email = data.user?.email;
+    if (!email) return { error: 'You must be signed in.' };
+    const { error } = await supabase.auth.resend({ type: 'email_change', email });
+    if (error) return { error: mapError(error.message) };
+    return { error: null };
+  };
+
+  const cancelEmailChange = () => {
+    // Supabase has no client-side "cancel"; the pending change simply expires
+    // on its own (email OTPs are short-lived) if never confirmed.
+  };
+
+  // --- change password (reauthentication OTP) ---
+
+  const requestPasswordChangeOtp = async (): Promise<Result> => {
+    const { error } = await supabase.auth.reauthenticate();
+    if (error) return { error: mapError(error.message) };
+    return { error: null };
+  };
+
+  const confirmPasswordChange = async (token: string, newPassword: string): Promise<Result> => {
+    const { error } = await supabase.auth.updateUser({ password: newPassword, nonce: token });
+    if (error) return { error: mapError(error.message) };
+    return { error: null };
+  };
+
+  // --- profile ---
+
+  const updateDisplayName = async (name: string): Promise<Result> => {
+    const { data, error } = await supabase.auth.updateUser({ data: { name } });
+    if (error) return { error: mapError(error.message) };
+    if (data.user) setUser(data.user);
+    return { error: null };
+  };
+
   return (
-    <AuthContext.Provider value={{ user, session, loading, signUp, signIn, signInWithGoogle, signOut }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        session,
+        loading,
+        signUp,
+        signIn,
+        signInWithGoogle,
+        signOut,
+        signOutEverywhere,
+        verifySignupOtp,
+        resendSignupOtp,
+        requestPasswordReset,
+        verifyPasswordResetOtp,
+        resendPasswordResetOtp,
+        setNewPassword,
+        requestEmailChange,
+        verifyEmailChangeOtp,
+        resendEmailChangeOtp,
+        cancelEmailChange,
+        requestPasswordChangeOtp,
+        confirmPasswordChange,
+        updateDisplayName,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

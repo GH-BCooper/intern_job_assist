@@ -1,7 +1,11 @@
 import { useState, FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Sparkles, Loader2, Eye, EyeOff } from 'lucide-react';
+import { Sparkles, Loader2, Eye, EyeOff, Mail, ArrowLeft, ShieldCheck } from 'lucide-react';
+import OtpInput from '../components/ui/OtpInput';
+import PasswordStrengthMeter from '../components/ui/PasswordStrengthMeter';
+import { useCooldown } from '../hooks/useCooldown';
+import { toast } from '../lib/uiBus';
 
 function GoogleIcon() {
   return (
@@ -14,9 +18,24 @@ function GoogleIcon() {
   );
 }
 
+function Logo() {
+  return (
+    <Link to="/" className="inline-flex items-center gap-2 group">
+      <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center shadow-soft group-hover:shadow-glow transition-shadow">
+        <Sparkles size={20} className="text-white" />
+      </span>
+      <span className="font-bold text-light-900 dark:text-white text-2xl tracking-tight">
+        Intern<span className="text-gradient">Track</span>
+      </span>
+    </Link>
+  );
+}
+
 export default function Register() {
-  const { signUp, signInWithGoogle } = useAuth();
+  const { signUp, signInWithGoogle, verifySignupOtp, resendSignupOtp } = useAuth();
   const navigate = useNavigate();
+
+  const [step, setStep] = useState<'form' | 'otp'>('form');
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -26,12 +45,15 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+
+  const [code, setCode] = useState('');
+  const [verifying, setVerifying] = useState(false);
+  const [resending, setResending] = useState(false);
+  const cooldown = useCooldown(45);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
-    setSuccess('');
     if (!name.trim() || !email || !password) {
       setError('All fields are required.');
       return;
@@ -49,13 +71,44 @@ export default function Register() {
     setLoading(false);
     if (err) {
       setError(err);
-    } else {
-      if (sessionCreated) {
-        navigate('/dashboard');
-      } else {
-        setSuccess('Account created. Check your email to confirm your account, then sign in.');
-      }
+      return;
     }
+    if (sessionCreated) {
+      // Email confirmation is off for this project — the account is ready immediately.
+      navigate('/dashboard');
+      return;
+    }
+    setStep('otp');
+    cooldown.start();
+  };
+
+  const handleVerify = async (value?: string) => {
+    const token = value ?? code;
+    if (token.length !== 6) return;
+    setError('');
+    setVerifying(true);
+    const { error: err } = await verifySignupOtp(email, token);
+    setVerifying(false);
+    if (err) {
+      setError(err);
+      return;
+    }
+    toast('Email verified — welcome to InternTrack.', 'success');
+    navigate('/dashboard');
+  };
+
+  const handleResend = async () => {
+    if (cooldown.active) return;
+    setResending(true);
+    setError('');
+    const { error: err } = await resendSignupOtp(email);
+    setResending(false);
+    if (err) {
+      setError(err);
+      return;
+    }
+    cooldown.start();
+    toast('A new code is on its way.', 'success');
   };
 
   const handleGoogle = async () => {
@@ -71,122 +124,165 @@ export default function Register() {
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-20">
       <div className="w-full max-w-md">
-        {/* Logo */}
         <div className="text-center mb-8">
-          <Link to="/" className="inline-flex items-center gap-2 group">
-            <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center shadow-soft group-hover:shadow-glow transition-shadow">
-              <Sparkles size={20} className="text-white" />
-            </span>
-            <span className="font-bold text-light-900 dark:text-white text-2xl tracking-tight">
-              Intern<span className="text-gradient">Track</span>
-            </span>
-          </Link>
-          <h1 className="mt-6 text-2xl font-bold text-light-900 dark:text-white">Create your account</h1>
-          <p className="text-light-600 dark:text-dark-400 text-sm mt-1">Free forever -- start tracking in seconds</p>
+          <Logo />
+          {step === 'form' ? (
+            <>
+              <h1 className="mt-6 text-2xl font-bold text-light-900 dark:text-white">Create your account</h1>
+              <p className="text-light-600 dark:text-dark-400 text-sm mt-1">Free forever -- start tracking in seconds</p>
+            </>
+          ) : (
+            <>
+              <h1 className="mt-6 text-2xl font-bold text-light-900 dark:text-white">Check your email</h1>
+              <p className="text-light-600 dark:text-dark-400 text-sm mt-1">
+                Enter the 6-digit code we sent to <span className="font-semibold text-light-800 dark:text-dark-200">{email}</span>
+              </p>
+            </>
+          )}
         </div>
 
-        {/* Card */}
         <div className="card p-8">
-          <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Google button */}
-            <button
-              type="button"
-              onClick={handleGoogle}
-              disabled={googleLoading}
-              className="w-full flex items-center justify-center gap-3 px-5 py-3 bg-white dark:bg-dark-700 border border-light-300 dark:border-dark-600 rounded-lg text-light-900 dark:text-dark-200 font-medium text-sm hover:bg-light-100 dark:hover:bg-dark-600 hover:border-light-400 dark:hover:border-dark-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {googleLoading ? <Loader2 size={18} className="animate-spin" /> : <GoogleIcon />}
-              Sign up with Google
-            </button>
+          {step === 'form' ? (
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <button
+                type="button"
+                onClick={handleGoogle}
+                disabled={googleLoading}
+                className="w-full flex items-center justify-center gap-3 px-5 py-3 bg-white dark:bg-dark-700 border border-light-300 dark:border-dark-600 rounded-lg text-light-900 dark:text-dark-200 font-medium text-sm hover:bg-light-100 dark:hover:bg-dark-600 hover:border-light-400 dark:hover:border-dark-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {googleLoading ? <Loader2 size={18} className="animate-spin" /> : <GoogleIcon />}
+                Sign up with Google
+              </button>
 
-            {/* Divider */}
-            <div className="relative flex items-center gap-3">
-              <div className="flex-1 h-px bg-light-300 dark:bg-dark-600" />
-              <span className="text-xs text-light-500 dark:text-dark-500 font-medium">or</span>
-              <div className="flex-1 h-px bg-light-300 dark:bg-dark-600" />
-            </div>
+              <div className="relative flex items-center gap-3">
+                <div className="flex-1 h-px bg-light-300 dark:bg-dark-600" />
+                <span className="text-xs text-light-500 dark:text-dark-500 font-medium">or</span>
+                <div className="flex-1 h-px bg-light-300 dark:bg-dark-600" />
+              </div>
 
-            <div>
-              <label className="block text-xs font-medium text-light-600 dark:text-dark-400 mb-1.5">Full Name</label>
-              <input
-                className="input-field"
-                placeholder="Your name"
-                value={name}
-                onChange={e => setName(e.target.value)}
-                autoComplete="name"
-              />
-            </div>
+              <div>
+                <label className="block text-xs font-medium text-light-600 dark:text-dark-400 mb-1.5">Full Name</label>
+                <input
+                  className="input-field"
+                  placeholder="Your name"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  autoComplete="name"
+                />
+              </div>
 
-            <div>
-              <label className="block text-xs font-medium text-light-600 dark:text-dark-400 mb-1.5">Email Address</label>
-              <input
-                type="email"
-                className="input-field"
-                placeholder="you@example.com"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                autoComplete="email"
-              />
-            </div>
+              <div>
+                <label className="block text-xs font-medium text-light-600 dark:text-dark-400 mb-1.5">Email Address</label>
+                <input
+                  type="email"
+                  className="input-field"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  autoComplete="email"
+                />
+              </div>
 
-            <div>
-              <label className="block text-xs font-medium text-light-600 dark:text-dark-400 mb-1.5">Password</label>
-              <div className="relative">
+              <div>
+                <label className="block text-xs font-medium text-light-600 dark:text-dark-400 mb-1.5">Password</label>
+                <div className="relative">
+                  <input
+                    type={showPw ? 'text' : 'password'}
+                    className="input-field pr-10"
+                    placeholder="Min. 6 characters"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    autoComplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPw(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-light-500 dark:text-dark-500 hover:text-light-900 dark:hover:text-dark-300 transition-colors"
+                  >
+                    {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+                <PasswordStrengthMeter password={password} />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-light-600 dark:text-dark-400 mb-1.5">Confirm Password</label>
                 <input
                   type={showPw ? 'text' : 'password'}
-                  className="input-field pr-10"
-                  placeholder="Min. 6 characters"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
+                  className="input-field"
+                  placeholder="Repeat password"
+                  value={confirm}
+                  onChange={e => setConfirm(e.target.value)}
                   autoComplete="new-password"
                 />
+              </div>
+
+              {error && (
+                <div className="text-red-700 dark:text-red-400 text-sm bg-red-100 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-lg px-4 py-2.5">
+                  {error}
+                </div>
+              )}
+
+              <button type="submit" disabled={loading} className="btn-primary w-full py-3">
+                {loading && <Loader2 size={16} className="animate-spin" />}
+                {loading ? 'Creating account...' : 'Create Account'}
+              </button>
+            </form>
+          ) : (
+            <div className="space-y-5">
+              <div className="w-12 h-12 mx-auto rounded-2xl bg-gradient-to-br from-primary-500/15 to-accent-500/15 border border-primary-300/50 dark:border-primary-900 flex items-center justify-center">
+                <Mail size={20} className="text-primary-600 dark:text-primary-400" />
+              </div>
+
+              <OtpInput value={code} onChange={setCode} onComplete={handleVerify} disabled={verifying} />
+
+              {error && (
+                <div className="text-red-700 dark:text-red-400 text-sm bg-red-100 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-lg px-4 py-2.5 text-center">
+                  {error}
+                </div>
+              )}
+
+              <button
+                onClick={() => handleVerify()}
+                disabled={verifying || code.length !== 6}
+                className="btn-primary w-full py-3"
+              >
+                {verifying ? <Loader2 size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+                {verifying ? 'Verifying...' : 'Verify & continue'}
+              </button>
+
+              <div className="text-center">
                 <button
-                  type="button"
-                  onClick={() => setShowPw(v => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-light-500 dark:text-dark-500 hover:text-light-900 dark:hover:text-dark-300 transition-colors"
+                  onClick={handleResend}
+                  disabled={cooldown.active || resending}
+                  className="text-xs font-medium text-primary-600 dark:text-primary-400 hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
                 >
-                  {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                  {resending ? 'Sending…' : cooldown.active ? `Resend code in ${cooldown.remaining}s` : 'Resend code'}
                 </button>
               </div>
+
+              <button
+                onClick={() => {
+                  setStep('form');
+                  setCode('');
+                  setError('');
+                }}
+                className="w-full flex items-center justify-center gap-1.5 text-xs text-light-500 dark:text-dark-400 hover:text-light-800 dark:hover:text-dark-200"
+              >
+                <ArrowLeft size={12} /> Use a different email
+              </button>
             </div>
-
-            <div>
-              <label className="block text-xs font-medium text-light-600 dark:text-dark-400 mb-1.5">Confirm Password</label>
-              <input
-                type={showPw ? 'text' : 'password'}
-                className="input-field"
-                placeholder="Repeat password"
-                value={confirm}
-                onChange={e => setConfirm(e.target.value)}
-                autoComplete="new-password"
-              />
-            </div>
-
-            {error && (
-              <div className="text-red-700 dark:text-red-400 text-sm bg-red-100 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-lg px-4 py-2.5">
-                {error}
-              </div>
-            )}
-
-            {success && (
-              <div className="text-primary-700 dark:text-primary-400 text-sm bg-primary-100 dark:bg-primary-500/10 border border-primary-200 dark:border-primary-500/20 rounded-lg px-4 py-2.5">
-                {success}
-              </div>
-            )}
-
-            <button type="submit" disabled={loading} className="btn-primary w-full py-3">
-              {loading && <Loader2 size={16} className="animate-spin" />}
-              {loading ? 'Creating account...' : 'Create Account'}
-            </button>
-          </form>
+          )}
         </div>
 
-        <p className="text-center text-light-600 dark:text-dark-500 text-sm mt-6">
-          Already have an account?{' '}
-          <Link to="/login" className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium transition-colors">
-            Sign in
-          </Link>
-        </p>
+        {step === 'form' && (
+          <p className="text-center text-light-600 dark:text-dark-500 text-sm mt-6">
+            Already have an account?{' '}
+            <Link to="/login" className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium transition-colors">
+              Sign in
+            </Link>
+          </p>
+        )}
       </div>
     </div>
   );
