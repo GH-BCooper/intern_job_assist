@@ -680,7 +680,7 @@ export async function executeTool(name: string, args: Args, bridge: ToolBridge):
       if (!app) return ok({ error: 'No application matched.' });
       if (!(STAGES as readonly string[]).includes(stage)) return ok({ error: `stage must be one of ${STAGES.join(', ')}` });
       setStage(app.id, stage);
-      const updated = await bridge.updateApplication(app.id, stagePatch(stage));
+      const updated = await bridge.updateApplication(app.id, stagePatch(stage, app));
       logActivity(`AI moved ${app.company_name} to ${stage}`, { actor: 'ai', kind: 'stage', application_id: app.id });
       return ok({ application: updated.company_name, stage });
     }
@@ -697,7 +697,7 @@ export async function executeTool(name: string, args: Args, bridge: ToolBridge):
           continue;
         }
         setStage(app.id, stage);
-        await bridge.updateApplication(app.id, stagePatch(stage));
+        await bridge.updateApplication(app.id, stagePatch(stage, app));
         moved.push(app.company_name);
       }
       logActivity(`AI moved ${moved.length} applications to ${stage}`, { actor: 'ai', kind: 'stage' });

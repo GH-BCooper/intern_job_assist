@@ -192,18 +192,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
       logActivity(`Added ${created.company_name}`, { kind: 'create', application_id: created.id });
 
       if (interviews.length) {
-        const { data: added } = await supabase
+        const { data: added, error: ivErr } = await supabase
           .from('interview_dates')
           .insert(interviews.map(iv => ({ ...iv, application_id: created.id, user_id: user.id })))
           .select();
+        if (ivErr) throw new Error(`Application saved, but interview dates failed to save: ${ivErr.message}`);
         if (added) setInterviewsMap(prev => ({ ...prev, [created.id]: added }));
       }
       if (learnings && (learnings.learnings || learnings.questions_asked)) {
-        const { data: saved } = await supabase
+        const { data: saved, error: lErr } = await supabase
           .from('interview_learnings')
           .insert({ application_id: created.id, user_id: user.id, ...learnings })
           .select()
           .maybeSingle();
+        if (lErr) throw new Error(`Application saved, but learnings failed to save: ${lErr.message}`);
         if (saved) setLearningsMap(prev => ({ ...prev, [created.id]: saved }));
       }
       return created;
@@ -239,12 +241,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
       logActivity(`Updated ${updated.company_name}`, { kind: 'update', application_id: id });
 
       if (interviews) {
-        await supabase.from('interview_dates').delete().eq('application_id', id);
+        const { error: delErr } = await supabase.from('interview_dates').delete().eq('application_id', id);
+        if (delErr) throw new Error(`Application saved, but interview dates failed to update: ${delErr.message}`);
         if (interviews.length) {
-          const { data: added } = await supabase
+          const { data: added, error: ivErr } = await supabase
             .from('interview_dates')
             .insert(interviews.map(iv => ({ ...iv, application_id: id, user_id: user.id })))
             .select();
+          if (ivErr) throw new Error(`Application saved, but interview dates failed to save: ${ivErr.message}`);
           setInterviewsMap(prev => ({ ...prev, [id]: added || [] }));
         } else {
           setInterviewsMap(prev => {
@@ -256,25 +260,28 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
 
       if (learnings) {
-        const { data: existing } = await supabase
+        const { data: existing, error: findErr } = await supabase
           .from('interview_learnings')
           .select('id')
           .eq('application_id', id)
           .maybeSingle();
+        if (findErr) throw new Error(`Application saved, but learnings failed to save: ${findErr.message}`);
         if (existing) {
-          const { data: saved } = await supabase
+          const { data: saved, error: updErr } = await supabase
             .from('interview_learnings')
             .update({ ...learnings, updated_at: new Date().toISOString() })
             .eq('id', existing.id)
             .select()
             .maybeSingle();
+          if (updErr) throw new Error(`Application saved, but learnings failed to save: ${updErr.message}`);
           if (saved) setLearningsMap(prev => ({ ...prev, [id]: saved }));
         } else {
-          const { data: saved } = await supabase
+          const { data: saved, error: insErr } = await supabase
             .from('interview_learnings')
             .insert({ application_id: id, user_id: user.id, ...learnings })
             .select()
             .maybeSingle();
+          if (insErr) throw new Error(`Application saved, but learnings failed to save: ${insErr.message}`);
           if (saved) setLearningsMap(prev => ({ ...prev, [id]: saved }));
         }
       }

@@ -234,14 +234,16 @@ export async function evaluateAutomations(bridge: AutomationBridge): Promise<num
         runAction(action, rule, m.application, m.context);
         if (action.type === 'set_stage' && m.application && action.stage) {
           try {
-            await bridge.updateApplication(m.application.id, stagePatch(action.stage as Stage));
+            await bridge.updateApplication(m.application.id, stagePatch(action.stage as Stage, m.application));
           } catch {
             /* stage sync failure shouldn't block the rest of the automation */
           }
         }
       }
       const label = m.application ? m.application.company_name : 'workspace';
-      recordAutomationRun(rule, m.dedupeKey, m.application?.id ?? null, `${rule.name} → ${label}`);
+      // Must match the `${rule.id}:${dedupeKey}` format findMatches() checks via automationHasRun,
+      // or every rule refires on the next tick instead of being deduplicated.
+      recordAutomationRun(rule, `${rule.id}:${m.dedupeKey}`, m.application?.id ?? null, `${rule.name} → ${label}`);
       logActivity(`Automation "${rule.name}" ran for ${label}`, {
         actor: 'system',
         kind: 'automation',

@@ -1,6 +1,6 @@
 import type { Application, InterviewDate } from './supabase';
 import type { StoreShape } from './store';
-import { DAY_MS, dayKey, daysSince, startOfWeek, ts } from './format';
+import { DAY_MS, dayKey, daysSince, startOfWeek, toDateInput, ts } from './format';
 
 export const STAGES = ['Wishlist', 'Applied', 'In Review', 'Interviewing', 'Offer', 'Closed'] as const;
 export type Stage = (typeof STAGES)[number];
@@ -26,21 +26,33 @@ export function stageOf(app: Application, overrides: Record<string, string> = {}
   return 'Wishlist';
 }
 
-/** Supabase fields implied by a board move, so the two stay consistent. */
-export function stagePatch(stage: Stage): Partial<Application> {
+/**
+ * Supabase fields implied by a board move, so the two stay consistent.
+ *
+ * Every stage past Wishlist implies the application was actually submitted.
+ * Without a `date_applied`, `stageOf` can't tell "Applied" apart from
+ * "Wishlist" and analytics that gate on `date_applied` (applied count, the
+ * stale-follow-up list, average response time) silently skip the record. If
+ * the caller passes the current record and it already has a date, that date
+ * is preserved; otherwise today's date is stamped in.
+ */
+export function stagePatch(stage: Stage, current?: Pick<Application, 'date_applied'>): Partial<Application> {
+  const withAppliedDate = (patch: Partial<Application>): Partial<Application> =>
+    current?.date_applied ? patch : { ...patch, date_applied: toDateInput() };
+
   switch (stage) {
     case 'Wishlist':
       return { response_status: 'Pending', final_status: 'In Progress', interview_offered: false };
     case 'Applied':
-      return { response_status: 'Pending', final_status: 'In Progress', interview_offered: false };
+      return withAppliedDate({ response_status: 'Pending', final_status: 'In Progress', interview_offered: false });
     case 'In Review':
-      return { response_status: 'Viewed', final_status: 'In Progress' };
+      return withAppliedDate({ response_status: 'Viewed', final_status: 'In Progress' });
     case 'Interviewing':
-      return { response_status: 'Shortlisted', final_status: 'In Progress', interview_offered: true };
+      return withAppliedDate({ response_status: 'Shortlisted', final_status: 'In Progress', interview_offered: true });
     case 'Offer':
-      return { response_status: 'Offered', final_status: 'In Progress' };
+      return withAppliedDate({ response_status: 'Offered', final_status: 'In Progress' });
     case 'Closed':
-      return { response_status: 'Rejected', final_status: 'Rejected' };
+      return withAppliedDate({ response_status: 'Rejected', final_status: 'Rejected' });
     default:
       return {};
   }

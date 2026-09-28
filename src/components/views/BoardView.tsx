@@ -35,7 +35,7 @@ export default function BoardView({ applications, interviewsMap, onOpen, onAdd }
     if (!app || stageOf(app, store.stageOverrides) === stage) return;
     setStage(id, stage);
     try {
-      await updateApplication(id, stagePatch(stage));
+      await updateApplication(id, stagePatch(stage, app));
       toast(`${app.company_name} → ${stage}`, 'success');
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Could not save the move.', 'error');
