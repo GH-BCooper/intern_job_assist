@@ -11,6 +11,9 @@ type Props = {
   applications: Application[];
   interviewsMap: Record<string, InterviewDate[]>;
   onOpen: (app: Application) => void;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
+  onToggleSelectAll?: (ids: string[]) => void;
 };
 
 type SortKey = 'company' | 'role' | 'platform' | 'applied' | 'status' | 'stage' | 'interview';
@@ -25,7 +28,14 @@ const COLUMNS: { key: SortKey; label: string; className?: string }[] = [
   { key: 'interview', label: 'Next interview', className: 'hidden lg:table-cell' },
 ];
 
-export default function TableView({ applications, interviewsMap, onOpen }: Props) {
+export default function TableView({
+  applications,
+  interviewsMap,
+  onOpen,
+  selectedIds,
+  onToggleSelect,
+  onToggleSelectAll,
+}: Props) {
   const store = useStore();
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'applied', dir: -1 });
 
@@ -65,6 +75,17 @@ export default function TableView({ applications, interviewsMap, onOpen }: Props
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-light-300 dark:border-dark-800 bg-light-200/60 dark:bg-dark-900/60">
+              {onToggleSelectAll && (
+                <th className="w-9 px-2">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all"
+                    checked={rows.length > 0 && rows.every(a => selectedIds?.has(a.id))}
+                    onChange={() => onToggleSelectAll(rows.map(a => a.id))}
+                    className="w-4 h-4 rounded accent-primary-500 cursor-pointer"
+                  />
+                </th>
+              )}
               <th className="w-9" />
               {COLUMNS.map(c => (
                 <th key={c.key} className={`text-left px-3 py-2.5 ${c.className || ''}`}>
@@ -88,8 +109,21 @@ export default function TableView({ applications, interviewsMap, onOpen }: Props
                 <tr
                   key={app.id}
                   onClick={() => onOpen(app)}
-                  className="cursor-pointer hover:bg-primary-50/60 dark:hover:bg-primary-950/20 transition-colors"
+                  className={`cursor-pointer hover:bg-primary-50/60 dark:hover:bg-primary-950/20 transition-colors ${
+                    selectedIds?.has(app.id) ? 'bg-primary-50/70 dark:bg-primary-950/30' : ''
+                  }`}
                 >
+                  {onToggleSelect && (
+                    <td className="px-2 py-2.5" onClick={e => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${app.company_name}`}
+                        checked={!!selectedIds?.has(app.id)}
+                        onChange={() => onToggleSelect(app.id)}
+                        className="w-4 h-4 rounded accent-primary-500 cursor-pointer"
+                      />
+                    </td>
+                  )}
                   <td className="px-2 py-2.5">
                     <button
                       onClick={e => {

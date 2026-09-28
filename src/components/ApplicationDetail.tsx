@@ -95,12 +95,13 @@ const AI_ACTIONS = [
 ];
 
 export default function ApplicationDetail({ application: app, onClose, onEdit, onDelete }: Props) {
-  const { interviewsMap, learningsMap, updateApplication, addInterviewDate, removeInterviewDate } = useData();
+  const { interviewsMap, learningsMap, updateApplication, addInterviewDate, removeInterviewDate, createApplication } = useData();
   const ai = useAI();
   const store = useStore();
 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [learnings, setLearnings] = useState<InterviewLearning | null>(learningsMap[app.id] ?? null);
   const [tagInput, setTagInput] = useState('');
@@ -148,7 +149,7 @@ export default function ApplicationDetail({ application: app, onClose, onEdit, o
   const changeStage = async (next: Stage) => {
     setStage(app.id, next);
     try {
-      await updateApplication(app.id, stagePatch(next));
+      await updateApplication(app.id, stagePatch(next, app));
       toast(`Moved to ${next}.`, 'success');
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Could not save the stage.', 'error');
@@ -193,6 +194,35 @@ export default function ApplicationDetail({ application: app, onClose, onEdit, o
       toast('Export failed.', 'error');
     } finally {
       setExporting(false);
+    }
+  };
+
+  const handleDuplicate = async () => {
+    setDuplicating(true);
+    try {
+      await createApplication({
+        company_name: `${app.company_name} (copy)`,
+        company_description: app.company_description,
+        resume_used: app.resume_used,
+        cover_letter_used: app.cover_letter_used,
+        response_status: 'Pending',
+        interview_offered: false,
+        final_status: 'In Progress',
+        date_applied: null,
+        salary_info: app.salary_info,
+        interview_questions: app.interview_questions,
+        tasks_to_complete: app.tasks_to_complete,
+        resume_path: '',
+        cover_letter_path: '',
+        role_applied_to: app.role_applied_to,
+        platform_applied_on: app.platform_applied_on,
+      });
+      toast('Duplicated — added to Wishlist. Re-attach files if needed.', 'success');
+      onClose();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Duplicate failed.', 'error');
+    } finally {
+      setDuplicating(false);
     }
   };
 
@@ -564,6 +594,10 @@ export default function ApplicationDetail({ application: app, onClose, onEdit, o
               <button onClick={handleDownloadZip} disabled={exporting} className="btn-secondary btn-sm w-full !justify-start">
                 {exporting ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
                 Download ZIP
+              </button>
+              <button onClick={handleDuplicate} disabled={duplicating} className="btn-secondary btn-sm w-full !justify-start">
+                {duplicating ? <Loader2 size={12} className="animate-spin" /> : <Copy size={12} />}
+                Duplicate
               </button>
               {confirmDelete ? (
                 <div className="pt-1 space-y-1.5">

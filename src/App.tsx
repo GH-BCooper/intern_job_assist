@@ -8,6 +8,7 @@ import Navbar from './components/Navbar';
 import AssistantPanel from './components/AssistantPanel';
 import CommandPalette from './components/CommandPalette';
 import Toaster from './components/ui/Toaster';
+import NetworkBanner from './components/NetworkBanner';
 import Home from './pages/Home';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -176,6 +177,7 @@ function AppShell() {
         </>
       )}
       <Toaster />
+      <NetworkBanner />
     </>
   );
 }

@@ -36,7 +36,7 @@ import TableView from '../components/views/TableView';
 import TimelineView from '../components/views/TimelineView';
 import PageShell from '../components/PageShell';
 import { Sparkline } from '../components/ui/Charts';
-import { deleteSavedView, saveView } from '../lib/store';
+import { deleteSavedView, saveView, toggleApplicationTag, toggleArchive, toggleStar } from '../lib/store';
 import { consumePending, emitUi, onUi, setDashboardMounted, toast, type UiEvent } from '../lib/uiBus';
 import { ts } from '../lib/format';
 
@@ -88,6 +88,9 @@ export default function Dashboard() {
   const [editLearnings, setEditLearnings] = useState<InterviewLearning | null>(null);
   const [detailApp, setDetailApp] = useState<Application | null>(null);
   const [prefill, setPrefill] = useState<Partial<ApplicationInsert> | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
 
   const analytics = useMemo(
     () => computeAnalytics(applications, interviewsMap, store, store.preferences.followUpDays),
@@ -221,6 +224,82 @@ export default function Dashboard() {
 
   const activeFilterCount =
     Object.values(filters).filter(Boolean).length + (starredOnly ? 1 : 0) + (showArchived ? 1 : 0);
+
+  // Selection only makes sense in table view, and must never point at a row that scrolled out of the filtered set.
+  useEffect(() => {
+    if (view !== 'table') {
+      setSelectedIds(prev => (prev.size ? new Set() : prev));
+      return;
+    }
+    const visible = new Set(filtered.map(a => a.id));
+    setSelectedIds(prev => {
+      const next = new Set([...prev].filter(id => visible.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [view, filtered]);
+
+  const toggleSelect = useCallback((id: string) => {
+    setConfirmBulkDelete(false);
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAll = useCallback((ids: string[]) => {
+    setConfirmBulkDelete(false);
+    setSelectedIds(prev => {
+      const allSelected = ids.length > 0 && ids.every(id => prev.has(id));
+      return allSelected ? new Set() : new Set(ids);
+    });
+  }, []);
+
+  const selectedApps = useMemo(() => applications.filter(a => selectedIds.has(a.id)), [applications, selectedIds]);
+
+  const bulkStar = () => {
+    selectedApps.forEach(a => {
+      if (!store.starred.includes(a.id)) toggleStar(a.id);
+    });
+    toast(`Starred ${selectedApps.length} application${selectedApps.length === 1 ? '' : 's'}.`, 'success');
+  };
+
+  const bulkArchiveToggle = () => {
+    const allArchived = selectedApps.every(a => store.archived.includes(a.id));
+    selectedApps.forEach(a => {
+      const isArchived = store.archived.includes(a.id);
+      if (allArchived ? isArchived : !isArchived) toggleArchive(a.id);
+    });
+    toast(
+      `${allArchived ? 'Unarchived' : 'Archived'} ${selectedApps.length} application${selectedApps.length === 1 ? '' : 's'}.`,
+      'success',
+    );
+    setSelectedIds(new Set());
+  };
+
+  const bulkTag = (tagId: string) => {
+    if (!tagId) return;
+    selectedApps.forEach(a => {
+      if (!store.applicationTags.some(at => at.application_id === a.id && at.tag_id === tagId)) {
+        toggleApplicationTag(a.id, tagId);
+      }
+    });
+    toast(`Tagged ${selectedApps.length} application${selectedApps.length === 1 ? '' : 's'}.`, 'success');
+  };
+
+  const bulkDelete = async () => {
+    setBulkDeleting(true);
+    const ids = [...selectedIds];
+    const results = await Promise.allSettled(ids.map(id => deleteApplication(id)));
+    const failed = results.filter(r => r.status === 'rejected').length;
+    setBulkDeleting(false);
+    setConfirmBulkDelete(false);
+    setSelectedIds(new Set());
+    if (detailApp && ids.includes(detailApp.id)) setDetailApp(null);
+    if (failed) toast(`Deleted ${ids.length - failed} of ${ids.length}. ${failed} failed.`, 'error');
+    else toast(`Deleted ${ids.length} application${ids.length === 1 ? '' : 's'}.`, 'success');
+  };
 
   const handleSave = async (
     data: ApplicationInsert,
@@ -558,7 +637,66 @@ export default function Dashboard() {
           }}
         />
       ) : view === 'table' ? (
-        <TableView applications={filtered} interviewsMap={interviewsMap} onOpen={setDetailApp} />
+        <>
+          {selectedIds.size > 0 && (
+            <div className="flex flex-wrap items-center gap-2 mb-3 p-2.5 rounded-xl border border-primary-300 dark:border-primary-900 bg-primary-50 dark:bg-primary-950/30">
+              <span className="text-xs font-semibold text-primary-800 dark:text-primary-200 px-1.5">
+                {selectedIds.size} selected
+              </span>
+              <button onClick={bulkStar} className="btn-secondary btn-sm">
+                <Star size={12} /> Star
+              </button>
+              <button onClick={bulkArchiveToggle} className="btn-secondary btn-sm">
+                <Archive size={12} /> {selectedApps.every(a => store.archived.includes(a.id)) ? 'Unarchive' : 'Archive'}
+              </button>
+              {store.tags.length > 0 && (
+                <select
+                  defaultValue=""
+                  onChange={e => {
+                    bulkTag(e.target.value);
+                    e.target.value = '';
+                  }}
+                  className="input-field !w-auto !py-1.5 !text-xs"
+                >
+                  <option value="" disabled>
+                    Add tag…
+                  </option>
+                  {store.tags.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <PrintAllButton applications={selectedApps} />
+              {confirmBulkDelete ? (
+                <span className="flex items-center gap-1.5">
+                  <button onClick={() => void bulkDelete()} disabled={bulkDeleting} className="btn-danger btn-sm">
+                    {bulkDeleting ? 'Deleting…' : 'Confirm delete'}
+                  </button>
+                  <button onClick={() => setConfirmBulkDelete(false)} className="btn-ghost btn-sm">
+                    Cancel
+                  </button>
+                </span>
+              ) : (
+                <button onClick={() => setConfirmBulkDelete(true)} className="btn-danger btn-sm">
+                  <Trash2 size={12} /> Delete
+                </button>
+              )}
+              <button onClick={() => setSelectedIds(new Set())} className="btn-ghost btn-sm ml-auto">
+                <X size={12} /> Clear
+              </button>
+            </div>
+          )}
+          <TableView
+            applications={filtered}
+            interviewsMap={interviewsMap}
+            onOpen={setDetailApp}
+            selectedIds={selectedIds}
+            onToggleSelect={toggleSelect}
+            onToggleSelectAll={toggleSelectAll}
+          />
+        </>
       ) : view === 'timeline' ? (
         <TimelineView applications={filtered} interviewsMap={interviewsMap} onOpen={setDetailApp} />
       ) : (
