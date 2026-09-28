@@ -14,12 +14,14 @@ import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import { onUi } from './lib/uiBus';
 import { useNotificationEngine } from './hooks/useAlerts';
+import { useAutomationEngine } from './hooks/useAutomations';
 
 // Secondary pages load on demand — the dashboard is the only route most sessions need.
 const Insights = lazy(() => import('./pages/Insights'));
 const CalendarPage = lazy(() => import('./pages/CalendarPage'));
 const Workspace = lazy(() => import('./pages/Workspace'));
 const Settings = lazy(() => import('./pages/Settings'));
+const Automations = lazy(() => import('./pages/Automations'));
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: string }> {
   state = { hasError: false, error: '' };
@@ -73,6 +75,7 @@ function UiBridge() {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
   useNotificationEngine();
+  useAutomationEngine();
 
   useEffect(
     () =>
@@ -149,6 +152,14 @@ function AppShell() {
           element={
             <ProtectedRoute>
               <Settings />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/automations"
+          element={
+            <ProtectedRoute>
+              <Automations />
             </ProtectedRoute>
           }
         />

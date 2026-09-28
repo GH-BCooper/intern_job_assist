@@ -16,6 +16,7 @@ import {
   Wand2,
   Wrench,
   X,
+  Zap,
 } from 'lucide-react';
 import { useAI } from '../context/AIContext';
 import { QUICK_PROMPTS } from '../lib/ai/agent';
@@ -31,6 +32,7 @@ const ICONS: Record<string, typeof Sparkles> = {
   mail: Mail,
   chart: BarChart3,
   wand: Wand2,
+  zap: Zap,
 };
 
 function ToolTrace({ traces }: { traces: { name: string; args: unknown; error?: string }[] }) {

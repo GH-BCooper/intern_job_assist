@@ -123,6 +123,8 @@ export type Preferences = {
   density: 'comfortable' | 'compact';
   weeklyDigest: boolean;
   onboarded: boolean;
+  webhookUrl: string;
+  automationsEnabled: boolean;
 };
 
 export const DEFAULT_PREFERENCES: Preferences = {
@@ -138,6 +140,69 @@ export const DEFAULT_PREFERENCES: Preferences = {
   density: 'comfortable',
   weeklyDigest: true,
   onboarded: false,
+  webhookUrl: '',
+  automationsEnabled: true,
+};
+
+/* --------------------------- automation engine --------------------------- */
+
+export type AutomationTriggerType =
+  | 'stale_no_response'
+  | 'interview_upcoming'
+  | 'task_overdue'
+  | 'no_activity_days'
+  | 'application_created'
+  | 'stage_is'
+  | 'weekly_digest';
+
+export type AutomationActionType =
+  | 'add_reminder'
+  | 'add_task'
+  | 'add_tag'
+  | 'notify'
+  | 'webhook'
+  | 'set_stage'
+  | 'archive'
+  | 'add_note';
+
+export type AutomationTrigger = {
+  type: AutomationTriggerType;
+  days?: number;
+  weekday?: number;
+  hour?: number;
+  stage?: string;
+};
+
+export type AutomationAction = {
+  type: AutomationActionType;
+  title?: string;
+  body?: string;
+  offsetDays?: number;
+  tag?: string;
+  stage?: string;
+  webhookUrl?: string;
+};
+
+export type AutomationRule = {
+  id: ID;
+  name: string;
+  description: string;
+  enabled: boolean;
+  trigger: AutomationTrigger;
+  actions: AutomationAction[];
+  builtin?: string;
+  created_at: string;
+  lastRunAt: string | null;
+  runCount: number;
+};
+
+export type AutomationLogEntry = {
+  id: ID;
+  ruleId: ID;
+  ruleName: string;
+  applicationId: ID | null;
+  summary: string;
+  created_at: string;
 };
 
 export type StoreShape = {
@@ -156,6 +221,9 @@ export type StoreShape = {
   stageOverrides: Record<ID, string>;
   archived: ID[];
   starred: ID[];
+  automationRules: AutomationRule[];
+  automationLog: AutomationLogEntry[];
+  automationSeen: Record<string, string>;
 };
 
 const EMPTY: StoreShape = {
@@ -174,6 +242,9 @@ const EMPTY: StoreShape = {
   stageOverrides: {},
   archived: [],
   starred: [],
+  automationRules: [],
+  automationLog: [],
+  automationSeen: {},
 };
 
 const PREFIX = 'interntrack.v2';
@@ -507,6 +578,55 @@ export function deleteResumeVersion(id: ID) {
   });
 }
 
+/* --------------------------- automation rules --------------------------- */
+
+export function addAutomationRule(input: Omit<AutomationRule, 'id' | 'created_at' | 'lastRunAt' | 'runCount'>): AutomationRule {
+  const rule: AutomationRule = { ...input, id: uid(), created_at: now(), lastRunAt: null, runCount: 0 };
+  mutate(d => {
+    d.automationRules.unshift(rule);
+  });
+  return rule;
+}
+
+export function updateAutomationRule(id: ID, patch: Partial<AutomationRule>) {
+  mutate(d => {
+    const r = d.automationRules.find(x => x.id === id);
+    if (r) Object.assign(r, patch);
+  });
+}
+
+export function toggleAutomationRule(id: ID) {
+  mutate(d => {
+    const r = d.automationRules.find(x => x.id === id);
+    if (r) r.enabled = !r.enabled;
+  });
+}
+
+export function deleteAutomationRule(id: ID) {
+  mutate(d => {
+    d.automationRules = d.automationRules.filter(r => r.id !== id);
+    d.automationLog = d.automationLog.filter(l => l.ruleId !== id);
+  });
+}
+
+/** True if a rule already fired for this dedupe key (prevents duplicate actions on every tick). */
+export function automationHasRun(key: string): boolean {
+  return !!read().automationSeen[key];
+}
+
+export function recordAutomationRun(rule: AutomationRule, key: string, applicationId: ID | null, summary: string) {
+  mutate(d => {
+    d.automationSeen[key] = now();
+    const r = d.automationRules.find(x => x.id === rule.id);
+    if (r) {
+      r.lastRunAt = now();
+      r.runCount += 1;
+    }
+    d.automationLog.unshift({ id: uid(), ruleId: rule.id, ruleName: rule.name, applicationId, summary, created_at: now() });
+    d.automationLog = d.automationLog.slice(0, 300);
+  });
+}
+
 /* ------------------------------ AI threads ------------------------------ */
 
 export const NEW_THREAD_TITLE = 'New conversation';
@@ -563,6 +683,8 @@ const MERGEABLE = [
   'savedViews',
   'resumes',
   'activity',
+  'automationRules',
+  'automationLog',
 ] as const;
 
 export function importStore(json: string, mode: 'merge' | 'replace' = 'merge') {

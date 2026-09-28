@@ -7,11 +7,13 @@
 import type { Application, ApplicationInsert, InterviewDate, InterviewLearning } from '../supabase';
 import type { ToolSchema } from './providers';
 import {
+  addAutomationRule,
   addContact,
   addNote,
   addReminder,
   addResumeVersion,
   addTask,
+  deleteAutomationRule,
   deleteReminder,
   logActivity,
   read,
@@ -20,11 +22,15 @@ import {
   setStage,
   toggleApplicationTag,
   toggleArchive,
+  toggleAutomationRule,
   toggleStar,
   updateReminder,
   upsertTag,
+  type AutomationActionType,
+  type AutomationTriggerType,
   type ReminderKind,
 } from '../store';
+import { evaluateAutomations } from '../automation';
 import { computeAnalytics, stageOf, stagePatch, STAGES, type Stage } from '../insights';
 import { emitDeferrable, emitUi } from '../uiBus';
 import { dayKey, fmtDate, ts } from '../format';
@@ -387,7 +393,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
   {
     name: 'navigate',
     description: 'Move the user to a page in the app.',
-    parameters: S.obj({ route: S.string('Route.', ['/dashboard', '/insights', '/calendar', '/workspace', '/settings', '/']) }, [
+    parameters: S.obj({ route: S.string('Route.', ['/dashboard', '/insights', '/calendar', '/workspace', '/automations', '/settings', '/']) }, [
       'route',
     ]),
   },
@@ -427,6 +433,68 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
     description: 'Download the tracker. PDF and DOCX produce a formatted report; CSV and JSON produce raw data.',
     parameters: S.obj({ format: S.string('Format.', ['pdf', 'docx', 'csv', 'json']) }, ['format']),
   },
+  {
+    name: 'list_automations',
+    description: 'List every automation rule (the "when X happens, do Y" engine on the Automations page), enabled state and run counts.',
+    parameters: S.obj({}),
+  },
+  {
+    name: 'create_automation',
+    description:
+      'Create an automation rule: one trigger and one resulting action, run automatically forever (checked every minute, zero cost). ' +
+      'Use this whenever the user describes a recurring behaviour they want, e.g. "remind me automatically when an application goes quiet" or "notify me the day before interviews".',
+    parameters: S.obj(
+      {
+        name: S.string('Short rule name.'),
+        description: S.string('One sentence describing what it does.'),
+        trigger_type: S.string('What starts the automation.', [
+          'stale_no_response',
+          'interview_upcoming',
+          'task_overdue',
+          'no_activity_days',
+          'application_created',
+          'stage_is',
+          'weekly_digest',
+        ]),
+        trigger_days: S.number('Day threshold/lead time, used by stale_no_response, interview_upcoming, no_activity_days.'),
+        trigger_stage: S.string('Stage name, used by stage_is.', [...STAGES]),
+        action_type: S.string('What happens when it fires.', [
+          'add_reminder',
+          'add_task',
+          'add_tag',
+          'notify',
+          'webhook',
+          'set_stage',
+          'archive',
+          'add_note',
+        ]),
+        action_title: S.string('Title text for add_reminder/add_task. Supports {{company}}, {{role}}, {{days}}.'),
+        action_body: S.string('Body/notes text for notify/webhook/add_note/add_reminder.'),
+        action_tag: S.string('Tag name, used by add_tag.'),
+        action_stage: S.string('Target stage, used by set_stage.', [...STAGES]),
+        action_offset_days: S.number('Days from now to due-date, used by add_reminder/add_task.'),
+      },
+      ['name', 'trigger_type', 'action_type'],
+    ),
+  },
+  {
+    name: 'toggle_automation',
+    description: 'Enable or disable an automation rule by name.',
+    parameters: S.obj({ name: S.string('Automation rule name (fuzzy match is fine).'), enabled: S.boolean('Target state.') }, [
+      'name',
+      'enabled',
+    ]),
+  },
+  {
+    name: 'delete_automation',
+    description: 'Permanently delete an automation rule by name.',
+    parameters: S.obj({ name: S.string('Automation rule name (fuzzy match is fine).') }, ['name']),
+  },
+  {
+    name: 'run_automations_now',
+    description: 'Force an immediate automation check instead of waiting for the next minute — use after creating or editing a rule to show results right away.',
+    parameters: S.obj({}),
+  },
 ];
 
 /* ------------------------------- execution ------------------------------- */
@@ -456,6 +524,7 @@ export async function executeTool(name: string, args: Args, bridge: ToolBridge):
         open_reminders: store.reminders.filter(r => !r.done).length,
         open_tasks: store.tasks.filter(t => !t.done).length,
         tags: store.tags.map(t => t.name),
+        active_automations: store.automationRules.filter(r => r.enabled).length,
       });
     }
 
@@ -913,6 +982,69 @@ export async function executeTool(name: string, args: Args, bridge: ToolBridge):
       return ok({ exported: format, records: apps.length });
     }
 
+    case 'list_automations':
+      return ok({
+        automations: store.automationRules.map(r => ({
+          id: r.id,
+          name: r.name,
+          enabled: r.enabled,
+          trigger: r.trigger,
+          actions: r.actions,
+          run_count: r.runCount,
+          last_run_at: r.lastRunAt,
+        })),
+      });
+
+    case 'create_automation': {
+      const triggerType = str(args, 'trigger_type') as AutomationTriggerType;
+      const actionType = str(args, 'action_type') as AutomationActionType;
+      const rule = addAutomationRule({
+        name: str(args, 'name', 'Untitled automation'),
+        description: str(args, 'description', 'Created by Scout.'),
+        enabled: true,
+        trigger: {
+          type: triggerType,
+          days: 'trigger_days' in args ? num(args, 'trigger_days', 7) : undefined,
+          stage: str(args, 'trigger_stage') || undefined,
+        },
+        actions: [
+          {
+            type: actionType,
+            title: str(args, 'action_title') || undefined,
+            body: str(args, 'action_body') || undefined,
+            tag: str(args, 'action_tag') || undefined,
+            stage: str(args, 'action_stage') || undefined,
+            offsetDays: 'action_offset_days' in args ? num(args, 'action_offset_days', 0) : undefined,
+          },
+        ],
+      });
+      logActivity(`AI created automation "${rule.name}"`, { actor: 'ai', kind: 'automation' });
+      return ok({ created: { id: rule.id, name: rule.name } });
+    }
+
+    case 'toggle_automation': {
+      const target = store.automationRules.find(r => r.name.toLowerCase().includes(str(args, 'name').toLowerCase()));
+      if (!target) return ok({ error: 'No automation matched that name.' });
+      if (target.enabled !== bool(args, 'enabled')) toggleAutomationRule(target.id);
+      return ok({ name: target.name, enabled: bool(args, 'enabled') });
+    }
+
+    case 'delete_automation': {
+      const target = store.automationRules.find(r => r.name.toLowerCase().includes(str(args, 'name').toLowerCase()));
+      if (!target) return ok({ error: 'No automation matched that name.' });
+      deleteAutomationRule(target.id);
+      return ok({ deleted: target.name });
+    }
+
+    case 'run_automations_now': {
+      const fired = await evaluateAutomations({
+        applications: bridge.applications,
+        interviewsMap: bridge.interviewsMap,
+        updateApplication: bridge.updateApplication,
+      });
+      return ok({ fired });
+    }
+
     default:
       return ok({ error: `Unknown tool: ${name}` });
   }
@@ -1019,6 +1151,10 @@ export const WRITE_TOOLS = new Set([
   'set_goal',
   'add_resume_version',
   'export_applications',
+  'create_automation',
+  'toggle_automation',
+  'delete_automation',
+  'run_automations_now',
 ]);
 
 export function markSuggestionsSeen() {

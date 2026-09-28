@@ -15,6 +15,7 @@ import {
   Sparkles,
   Sun,
   TrendingUp,
+  Zap,
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useTheme } from '../context/ThemeContext';
@@ -80,6 +81,7 @@ export default function CommandPalette() {
       { id: 'insights', label: 'Go to Insights', icon: TrendingUp, group: 'Navigate', run: go('/insights') },
       { id: 'calendar', label: 'Go to Calendar', icon: CalendarDays, group: 'Navigate', run: go('/calendar') },
       { id: 'workspace', label: 'Go to Workspace', hint: 'notes, tasks, contacts', icon: FolderKanban, group: 'Navigate', run: go('/workspace') },
+      { id: 'automations', label: 'Go to Automations', hint: 'rules that run themselves', icon: Zap, group: 'Navigate', run: go('/automations') },
       { id: 'settings', label: 'Go to Settings', icon: SettingsIcon, group: 'Navigate', run: go('/settings') },
       { id: 'board', label: 'View: Board', icon: FolderKanban, group: 'Views', run: () => { navigate('/dashboard'); emitUi({ type: 'set-view', view: 'board' }); setOpen(false); } },
       { id: 'grid', label: 'View: Cards', icon: LayoutDashboard, group: 'Views', run: () => { navigate('/dashboard'); emitUi({ type: 'set-view', view: 'grid' }); setOpen(false); } },

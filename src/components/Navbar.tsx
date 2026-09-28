@@ -13,6 +13,7 @@ import {
   Sun,
   TrendingUp,
   X,
+  Zap,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -25,6 +26,7 @@ const NAV = [
   { to: '/insights', label: 'Insights', icon: TrendingUp },
   { to: '/calendar', label: 'Calendar', icon: CalendarDays },
   { to: '/workspace', label: 'Workspace', icon: FolderKanban },
+  { to: '/automations', label: 'Automations', icon: Zap },
 ];
 
 export default function Navbar() {

@@ -23,6 +23,7 @@ export function systemPrompt(ctx: {
     '- Chain tools freely in one turn: read, then act, then confirm.',
     '- When the user asks you to do something, do it with tools instead of describing how to do it manually.',
     '- You may also drive the interface: navigate, set_view, set_filters, open_application, set_theme.',
+    '- You can build lasting automations: create_automation sets up a "when X happens, do Y" rule that runs forever with no further input (e.g. auto follow-ups, interview-prep tasks, stale-pipeline alerts). Use it whenever the user wants something to happen automatically or repeatedly, not just once.',
     ctx.autoActions
       ? '- You are authorised to create and update records, reminders, tasks, notes, tags and goals without asking first.'
       : '- Ask for confirmation before any write tool.',
@@ -110,4 +111,5 @@ export const QUICK_PROMPTS: { label: string; prompt: string; icon: string }[] = 
   { label: 'Draft a follow-up email', prompt: 'Draft a short, polite follow-up email for the application that has been waiting longest.', icon: 'mail' },
   { label: 'Where should I apply more?', prompt: 'Which platforms and roles convert best for me, and where am I wasting effort?', icon: 'chart' },
   { label: 'Tidy my tracker', prompt: 'Audit my tracker for missing data — stale statuses, interviews without dates, untagged applications — and fix what you safely can.', icon: 'wand' },
+  { label: 'Automate my follow-ups', prompt: 'Set up an automation that reminds me to follow up whenever an application goes quiet, and another that adds a prep task before every interview.', icon: 'zap' },
 ];
