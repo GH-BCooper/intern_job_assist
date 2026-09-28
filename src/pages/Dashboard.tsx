@@ -7,10 +7,17 @@ import {
   BookmarkPlus,
   Briefcase,
   CalendarClock,
+  CalendarPlus,
+  Columns3,
+  Copy,
   Flame,
   FolderKanban,
+  Gauge,
+  Layers,
   LayoutGrid,
+  Lightbulb,
   List,
+  Maximize2,
   Plus,
   RefreshCw,
   Search,
@@ -20,13 +27,20 @@ import {
   Table2,
   Trash2,
   TrendingUp,
+  Trophy,
   X,
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import { useStore } from '../hooks/useStore';
 import type { Application, ApplicationInsert, InterviewDateInsert, InterviewLearning } from '../lib/supabase';
-import { computeAnalytics, stageOf, STAGES } from '../lib/insights';
+import {
+  computeAnalytics,
+  orderedStages,
+  stageLabel,
+  stageOf,
+  weeklyWrapped,
+} from '../lib/insights';
 import ApplicationCard from '../components/ApplicationCard';
 import ApplicationForm from '../components/ApplicationForm';
 import ApplicationDetail from '../components/ApplicationDetail';
@@ -36,9 +50,32 @@ import TableView from '../components/views/TableView';
 import TimelineView from '../components/views/TimelineView';
 import PageShell from '../components/PageShell';
 import { Sparkline } from '../components/ui/Charts';
-import { deleteSavedView, saveView, toggleApplicationTag, toggleArchive, toggleStar } from '../lib/store';
+import BentoTile, { StatTile } from '../components/ui/BentoTile';
+import NowStrip from '../components/NowStrip';
+import FocusMode from '../components/FocusMode';
+import CompareView from '../components/CompareView';
+import WrappedCard from '../components/WrappedCard';
+import QuickAdd from '../components/QuickAdd';
+import Onboarding from '../components/Onboarding';
+import EmptyState from '../components/ui/EmptyArt';
+import {
+  addAppTemplate,
+  deleteAppTemplate,
+  deleteSavedView,
+  markBackupTaken,
+  savePreferences,
+  saveView,
+  toggleApplicationTag,
+  toggleArchive,
+  toggleStar,
+  type SwimlaneId,
+} from '../lib/store';
 import { consumePending, emitUi, onUi, setDashboardMounted, toast, type UiEvent } from '../lib/uiBus';
-import { ts } from '../lib/format';
+import { daysSince, ts } from '../lib/format';
+import { pushUndo } from '../lib/undo';
+import { buildWorkspaceIcs, downloadIcs } from '../lib/ics';
+import { tipOfTheDay } from '../lib/tips';
+import { play } from '../lib/fx';
 
 const VIEWS = [
   { id: 'board', label: 'Board', icon: FolderKanban },
@@ -49,12 +86,20 @@ const VIEWS = [
 
 const STATUS_OPTIONS = ['', 'Pending', 'Viewed', 'Rejected', 'Shortlisted', 'Offered'];
 
+const SWIMLANES: { value: SwimlaneId; label: string }[] = [
+  { value: 'none', label: 'No grouping' },
+  { value: 'platform', label: 'Group by platform' },
+  { value: 'tag', label: 'Group by tag' },
+  { value: 'priority', label: 'Group by priority' },
+];
+
 const SORTS = [
   { value: 'recent', label: 'Newest applied' },
   { value: 'oldest', label: 'Oldest applied' },
   { value: 'interview_closest', label: 'Interview soonest' },
   { value: 'company', label: 'Company A–Z' },
   { value: 'quiet', label: 'Quietest first' },
+  { value: 'priority', label: 'Priority first' },
 ];
 
 type Filters = { search: string; status: string; platform: string; stage: string; tag: string };
@@ -91,6 +136,11 @@ export default function Dashboard() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [focusApp, setFocusApp] = useState<Application | null>(null);
+  const [compareIds, setCompareIds] = useState<string[] | null>(null);
+  const [showWrapped, setShowWrapped] = useState(false);
+  const [quickAddText, setQuickAddText] = useState<string | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   const analytics = useMemo(
     () => computeAnalytics(applications, interviewsMap, store, store.preferences.followUpDays),
@@ -128,6 +178,25 @@ export default function Dashboard() {
           setShowForm(false);
           setDetailApp(app);
         }
+      } else if (e.type === 'open-focus') {
+        const app = applications.find(a => a.id === e.id);
+        if (app) {
+          setDetailApp(null);
+          setShowForm(false);
+          setFocusApp(app);
+        }
+      } else if (e.type === 'compare') {
+        const ids = e.ids.filter(id => applications.some(a => a.id === id));
+        if (ids.length >= 2) setCompareIds(ids.slice(0, 3));
+        else toast('Pick two or three applications to compare.', 'info');
+      } else if (e.type === 'open-wrapped') {
+        setShowWrapped(true);
+      } else if (e.type === 'quick-add') {
+        setQuickAddText(e.text || '');
+      } else if (e.type === 'open-onboarding') {
+        setShowOnboarding(true);
+      } else if (e.type === 'set-swimlane') {
+        savePreferences({ swimlane: e.swimlane });
       }
     },
     [applications],
@@ -145,6 +214,38 @@ export default function Dashboard() {
     replayQueue.current = consumePending();
     return () => setDashboardMounted(false);
   }, []);
+
+  // First run: show the guided setup once, and never again after it completes.
+  useEffect(() => {
+    if (!loading && !store.preferences.onboarded) setShowOnboarding(true);
+  }, [loading, store.preferences.onboarded]);
+
+  /**
+   * Local-backup nudge.
+   *
+   * The richest data — tags, notes, contacts, automations, AI threads — lives
+   * only in this browser's storage, so a periodic reminder to export it is the
+   * difference between a backup and a hope.
+   */
+  useEffect(() => {
+    if (loading) return;
+    const { backupNudgeDays, lastBackupAt, onboarded } = store.preferences;
+    if (!backupNudgeDays || !onboarded) return;
+    const since = daysSince(lastBackupAt);
+    if (since !== null && since < backupNudgeDays) return;
+    if (since === null && applications.length < 5) return;
+    const id = window.setTimeout(() => {
+      toast(
+        since === null
+          ? 'Your workspace has never been exported. Settings → Data has a one-click backup.'
+          : `It has been ${since} days since your last workspace export.`,
+        'info',
+      );
+      // Snooze by recording the nudge itself, so it is not shown every visit.
+      markBackupTaken();
+    }, 4000);
+    return () => window.clearTimeout(id);
+  }, [loading, store.preferences, applications.length]);
 
   // Replay only once applications have loaded, so id lookups can resolve.
   useEffect(() => {
@@ -186,6 +287,7 @@ export default function Dashboard() {
 
     const rows = applications.filter(app => {
       if (!showArchived && store.archived.includes(app.id)) return false;
+      if (store.preferences.activeSeason && store.seasonOf[app.id] !== store.preferences.activeSeason) return false;
       if (starredOnly && !store.starred.includes(app.id)) return false;
       if (q) {
         const haystack = [app.company_name, app.role_applied_to, app.platform_applied_on, app.company_description]
@@ -216,6 +318,8 @@ export default function Dashboard() {
           return firstInterview(a) - firstInterview(b);
         case 'quiet':
           return ts(a.date_applied || a.created_at) - ts(b.date_applied || b.created_at);
+        case 'priority':
+          return (store.priorities[b.id] || 0) - (store.priorities[a.id] || 0);
         default:
           return ts(b.date_applied || b.created_at) - ts(a.date_applied || a.created_at);
       }
@@ -267,15 +371,31 @@ export default function Dashboard() {
 
   const bulkArchiveToggle = () => {
     const allArchived = selectedApps.every(a => store.archived.includes(a.id));
-    selectedApps.forEach(a => {
-      const isArchived = store.archived.includes(a.id);
-      if (allArchived ? isArchived : !isArchived) toggleArchive(a.id);
-    });
-    toast(
-      `${allArchived ? 'Unarchived' : 'Archived'} ${selectedApps.length} application${selectedApps.length === 1 ? '' : 's'}.`,
-      'success',
+    const touched = selectedApps.filter(a => (allArchived ? store.archived.includes(a.id) : !store.archived.includes(a.id)));
+    touched.forEach(a => toggleArchive(a.id));
+    pushUndo(
+      `${allArchived ? 'Unarchived' : 'Archived'} ${touched.length} application${touched.length === 1 ? '' : 's'}.`,
+      () => touched.forEach(a => toggleArchive(a.id)),
     );
     setSelectedIds(new Set());
+  };
+
+  /** Saves the current selection's shape as a reusable template. */
+  const saveAsTemplate = (app: Application) => {
+    const name = window.prompt('Name this template', `${app.role_applied_to || app.company_name} template`);
+    if (!name?.trim()) return;
+    addAppTemplate({
+      name: name.trim(),
+      patch: {
+        role_applied_to: app.role_applied_to,
+        platform_applied_on: app.platform_applied_on,
+        resume_used: app.resume_used,
+        cover_letter_used: app.cover_letter_used,
+        salary_info: app.salary_info,
+      },
+      tagIds: store.applicationTags.filter(at => at.application_id === app.id).map(at => at.tag_id),
+    });
+    toast('Template saved — spawn a new application from it any time.', 'success');
   };
 
   const bulkTag = (tagId: string) => {
@@ -321,12 +441,22 @@ export default function Dashboard() {
 
   const firstName = (user?.user_metadata?.name as string | undefined)?.split(' ')[0];
 
-  const heroStats = [
-    { label: 'Active', value: analytics.active, icon: Briefcase, tone: 'text-light-900 dark:text-white' },
-    { label: 'Interviewing', value: analytics.byStage.Interviewing, icon: CalendarClock, tone: 'text-primary-600 dark:text-primary-400' },
-    { label: 'Offers', value: analytics.offers, icon: TrendingUp, tone: 'text-emerald-600 dark:text-emerald-400' },
-    { label: 'Need follow-up', value: analytics.stale.length, icon: AlertTriangle, tone: 'text-amber-600 dark:text-amber-400' },
-  ];
+  const nextInterview = analytics.upcomingInterviews[0];
+  const nextInterviewDays = nextInterview
+    ? Math.max(0, Math.ceil((ts(nextInterview.interview.interview_date) - Date.now()) / 86_400_000))
+    : null;
+  const wrapped = useMemo(
+    () => weeklyWrapped(applications, interviewsMap, analytics),
+    [applications, interviewsMap, analytics],
+  );
+  const tip = useMemo(() => tipOfTheDay(), []);
+  const stages = useMemo(() => orderedStages(store.preferences), [store.preferences]);
+
+  const exportCalendar = () => {
+    const ics = buildWorkspaceIcs(applications, interviewsMap, store);
+    downloadIcs('interntrack-calendar', ics);
+    toast('Calendar exported — open it to add everything to Google, Apple or Outlook.', 'success');
+  };
 
   return (
     <PageShell
@@ -342,6 +472,15 @@ export default function Dashboard() {
           <button onClick={() => emitUi({ type: 'open-palette' })} className="btn-secondary hidden sm:inline-flex">
             <Search size={14} /> Search <span className="kbd ml-1">⌘K</span>
           </button>
+          {analytics.upcomingInterviews[0] && (
+            <button
+              onClick={() => setFocusApp(analytics.upcomingInterviews[0].app)}
+              className="btn-secondary hidden md:inline-flex"
+              title="Distraction-free prep for your next interview"
+            >
+              <Maximize2 size={14} /> Focus
+            </button>
+          )}
           <button
             onClick={() => {
               setEditApp(null);
@@ -354,61 +493,139 @@ export default function Dashboard() {
         </>
       }
     >
-      {/* hero stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
-        {heroStats.map(s => {
-          const Icon = s.icon;
-          return (
-            <div key={s.label} className="card p-4">
-              <div className="flex items-center gap-2 mb-1">
-                <Icon size={13} className="text-light-500 dark:text-dark-400" />
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-light-500 dark:text-dark-400">
-                  {s.label}
-                </p>
-              </div>
-              <p className={`text-2xl font-bold tabular-nums leading-none ${s.tone}`}>{s.value}</p>
-            </div>
-          );
-        })}
-        <div className="card p-4 col-span-2 lg:col-span-1">
-          <div className="flex items-center gap-2 mb-1">
-            <Flame size={13} className="text-primary-500" />
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-light-500 dark:text-dark-400">Cadence</p>
-          </div>
-          <p className="text-2xl font-bold text-light-900 dark:text-white tabular-nums leading-none">{analytics.thisWeek}</p>
-          <Sparkline values={analytics.byWeek.map(w => w.count)} height={22} className="mt-1" />
-        </div>
-      </div>
+      <NowStrip />
 
-      {/* next up strip */}
-      {(analytics.upcomingInterviews.length > 0 || analytics.stale.length > 0) && (
-        <div className="flex flex-wrap items-center gap-2 mb-5">
-          {analytics.upcomingInterviews.slice(0, 2).map(({ app, interview }) => (
-            <button
-              key={interview.id}
-              onClick={() => setDetailApp(app)}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-primary-300 dark:border-primary-900 bg-primary-50 dark:bg-primary-950/30 text-xs font-medium text-primary-800 dark:text-primary-200 hover:shadow-soft transition-shadow"
-            >
-              <CalendarClock size={13} />
-              {app.company_name} · {interview.label || 'Interview'}
-            </button>
-          ))}
-          {analytics.stale.length > 0 && (
-            <button
-              onClick={() =>
-                emitUi({
-                  type: 'open-assistant',
-                  prompt: 'Find every application that has gone quiet and schedule follow-up reminders for each.',
-                })
-              }
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-amber-300 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 text-xs font-medium text-amber-800 dark:text-amber-200 hover:shadow-soft transition-shadow"
-            >
-              <Sparkles size={13} />
-              {analytics.stale.length} need a follow-up — let Scout handle it
-            </button>
-          )}
-        </div>
-      )}
+      {/* bento hero: variable-sized tiles instead of a uniform stat row */}
+      <div className="bento mb-5">
+        <BentoTile label="Momentum" icon={Gauge} span="wide" accent>
+          <div className="flex items-end gap-4">
+            <div>
+              <p className="text-4xl font-bold tabular-nums leading-none text-light-900 dark:text-white animate-count-up">
+                {analytics.momentum}
+                <span className="text-lg font-semibold text-light-500 dark:text-dark-400">/100</span>
+              </p>
+              <p className="text-[11px] text-light-600 dark:text-dark-300 mt-1.5 leading-snug max-w-[13rem]">
+                {analytics.thisWeek} out this week · {analytics.interviewRate}% reach an interview ·{' '}
+                {analytics.streak} day streak
+              </p>
+            </div>
+            <div className="flex-1 min-w-0">
+              <Sparkline values={analytics.byWeek.map(w => w.count)} height={44} />
+            </div>
+          </div>
+          <button
+            onClick={() => emitUi({ type: 'navigate', to: '/insights' })}
+            className="mt-2 text-[11px] font-semibold text-primary-700 dark:text-primary-300 hover:underline self-start"
+          >
+            See why →
+          </button>
+        </BentoTile>
+
+        {nextInterview ? (
+          <BentoTile label="Next interview" icon={CalendarClock} onClick={() => setDetailApp(nextInterview.app)}>
+            <p className="text-3xl font-bold tabular-nums leading-none text-primary-600 dark:text-primary-400 animate-count-up">
+              {nextInterviewDays === 0 ? 'Today' : `${nextInterviewDays}d`}
+            </p>
+            <p className="text-xs font-semibold text-light-900 dark:text-white mt-1.5 truncate">
+              {nextInterview.app.company_name}
+            </p>
+            <p className="text-[11px] text-light-500 dark:text-dark-400 truncate">
+              {nextInterview.interview.label || 'Interview'}
+            </p>
+          </BentoTile>
+        ) : (
+          <StatTile label="Interviewing" value={analytics.byStage.Interviewing} icon={CalendarClock} tone="text-primary-600 dark:text-primary-400" hint="No dates logged yet" />
+        )}
+
+        <StatTile label="Active" value={analytics.active} icon={Briefcase} />
+        <StatTile
+          label="Offers"
+          value={analytics.offers}
+          icon={TrendingUp}
+          tone="text-emerald-600 dark:text-emerald-400"
+          hint={analytics.offers > 1 ? 'Compare them side by side' : undefined}
+          onClick={
+            analytics.offers > 1
+              ? () =>
+                  setCompareIds(
+                    applications
+                      .filter(a => stageOf(a, store.stageOverrides) === 'Offer')
+                      .slice(0, 3)
+                      .map(a => a.id),
+                  )
+              : undefined
+          }
+        />
+        <StatTile
+          label="Need follow-up"
+          value={analytics.stale.length}
+          icon={AlertTriangle}
+          tone={analytics.stale.length ? 'text-amber-600 dark:text-amber-400' : undefined}
+          hint={analytics.stale.length ? `Longest: ${analytics.stale[0].app.company_name}` : 'Nothing overdue'}
+          onClick={
+            analytics.stale.length
+              ? () =>
+                  emitUi({
+                    type: 'open-assistant',
+                    prompt: 'Find every application that has gone quiet and schedule follow-up reminders for each.',
+                  })
+              : undefined
+          }
+        />
+
+        <BentoTile label="This week" icon={Flame} onClick={() => setShowWrapped(true)}>
+          <p className="text-3xl font-bold tabular-nums leading-none text-light-900 dark:text-white animate-count-up">
+            {analytics.thisWeek}
+          </p>
+          <p className="text-[11px] text-light-500 dark:text-dark-400 mt-1.5 leading-snug">
+            {wrapped.delta === 0
+              ? 'Level with last week'
+              : wrapped.delta > 0
+                ? `Up ${wrapped.delta} on last week`
+                : `Down ${Math.abs(wrapped.delta)} on last week`}
+          </p>
+          <span className="text-[11px] font-semibold text-primary-600 dark:text-primary-400 mt-1 inline-flex items-center gap-1">
+            <Trophy size={11} /> Week in review
+          </span>
+        </BentoTile>
+
+        {analytics.total === 0 ? (
+          <BentoTile label="Tip of the day" icon={Lightbulb} span="wide">
+            <p className="text-xs text-light-700 dark:text-dark-200 leading-relaxed">{tip.tip}</p>
+            <p className="text-[10px] uppercase tracking-wide text-light-500 dark:text-dark-400 mt-1.5">{tip.source}</p>
+          </BentoTile>
+        ) : (
+          <BentoTile label="Pipeline" icon={Columns3} span="wide">
+            <div className="flex items-end gap-1.5 h-12">
+              {stages.map(stage => {
+                const count = analytics.byStage[stage] || 0;
+                const max = Math.max(1, ...stages.map(s => analytics.byStage[s] || 0));
+                return (
+                  <button
+                    key={stage}
+                    onClick={() => setFilters(fl => ({ ...fl, stage: fl.stage === stage ? '' : stage }))}
+                    title={`${stageLabel(stage, store.preferences)}: ${count}`}
+                    className="flex-1 flex flex-col items-center justify-end gap-1 group"
+                  >
+                    <span className="text-[10px] font-bold tabular-nums text-light-700 dark:text-dark-200">{count}</span>
+                    <span
+                      className="w-full rounded-t bg-gradient-to-t from-primary-500 to-accent-400 group-hover:opacity-80 transition-opacity"
+                      style={{ height: `${Math.max((count / max) * 30, count ? 3 : 1)}px`, opacity: count ? 1 : 0.2 }}
+                    />
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex gap-1.5 mt-1">
+              {stages.map(stage => (
+                <span key={stage} className="flex-1 text-[8.5px] text-center text-light-500 dark:text-dark-400 truncate">
+                  {stageLabel(stage, store.preferences).slice(0, 8)}
+                </span>
+              ))}
+            </div>
+          </BentoTile>
+        )}
+      </div>
 
       {/* view switcher + toolbar */}
       <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -433,6 +650,29 @@ export default function Dashboard() {
             className="input-field pl-9"
           />
         </div>
+
+        {view === 'board' && (
+          <select
+            value={store.preferences.swimlane}
+            onChange={e => savePreferences({ swimlane: e.target.value as SwimlaneId })}
+            className="input-field !w-auto !py-2 !px-3 !text-xs appearance-none"
+            aria-label="Board grouping"
+          >
+            {SWIMLANES.map(s => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        )}
+
+        <button onClick={() => setQuickAddText('')} className="btn-secondary btn-sm" title="Paste a job posting">
+          <Sparkles size={12} /> <span className="hidden lg:inline">Quick add</span>
+        </button>
+
+        <button onClick={exportCalendar} className="btn-secondary btn-sm" title="Download interviews and reminders as .ics">
+          <CalendarPlus size={12} /> <span className="hidden lg:inline">Calendar</span>
+        </button>
 
         <PrintAllButton applications={filtered} />
       </div>
@@ -459,9 +699,9 @@ export default function Dashboard() {
           className="input-field !w-auto !py-2 !px-3 !text-xs appearance-none min-w-[8rem]"
         >
           <option value="">All stages</option>
-          {STAGES.map(s => (
+          {stages.map(s => (
             <option key={s} value={s}>
-              {s}
+              {stageLabel(s, store.preferences)}
             </option>
           ))}
         </select>
@@ -550,6 +790,62 @@ export default function Dashboard() {
         )}
       </div>
 
+      {(store.seasons.length > 0 || store.appTemplates.length > 0) && (
+        <div className="flex flex-wrap items-center gap-1.5 mb-4">
+          {store.seasons.length > 0 && (
+            <>
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-light-500 dark:text-dark-400 mr-1 inline-flex items-center gap-1">
+                <Layers size={11} /> Season
+              </span>
+              <button
+                onClick={() => savePreferences({ activeSeason: '' })}
+                className={`btn-secondary btn-sm ${!store.preferences.activeSeason ? '!border-primary-400 !text-primary-600 dark:!text-primary-400' : ''}`}
+              >
+                All
+              </button>
+              {store.seasons.map(season => (
+                <button
+                  key={season.id}
+                  onClick={() => savePreferences({ activeSeason: season.id })}
+                  className={`btn-secondary btn-sm ${store.preferences.activeSeason === season.id ? '!border-primary-400 !text-primary-600 dark:!text-primary-400' : ''}`}
+                >
+                  {season.name}
+                </button>
+              ))}
+            </>
+          )}
+          {store.appTemplates.length > 0 && (
+            <>
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-light-500 dark:text-dark-400 ml-2 mr-1 inline-flex items-center gap-1">
+                <Copy size={11} /> Templates
+              </span>
+              {store.appTemplates.map(tpl => (
+                <span key={tpl.id} className="chip group">
+                  <button
+                    onClick={() => {
+                      setEditApp(null);
+                      setEditLearnings(null);
+                      setPrefill(tpl.patch as Partial<ApplicationInsert>);
+                      setShowForm(true);
+                    }}
+                    className="inline-flex items-center gap-1.5"
+                  >
+                    {tpl.name}
+                  </button>
+                  <button
+                    onClick={() => deleteAppTemplate(tpl.id)}
+                    className="opacity-0 group-hover:opacity-100 text-light-400 hover:text-red-500 transition-opacity"
+                    aria-label={`Delete ${tpl.name}`}
+                  >
+                    <Trash2 size={10} />
+                  </button>
+                </span>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+
       {store.savedViews.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 mb-5">
           <span className="text-[11px] font-semibold uppercase tracking-wide text-light-500 dark:text-dark-400 mr-1">
@@ -594,36 +890,47 @@ export default function Dashboard() {
           </button>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="card p-16 text-center">
-          <div className="w-14 h-14 mx-auto rounded-2xl bg-light-200 dark:bg-dark-800 flex items-center justify-center mb-4">
-            <Briefcase size={24} className="text-light-400 dark:text-dark-600" />
-          </div>
+        <div className="card">
           {applications.length === 0 ? (
-            <>
-              <h3 className="text-light-900 dark:text-white font-semibold text-lg mb-2">No applications yet</h3>
-              <p className="text-sm text-light-600 dark:text-dark-300 mb-5 max-w-sm mx-auto">
-                Add one yourself, or just tell Scout: “I applied to Stripe for a backend internship on LinkedIn today.”
-              </p>
-              <div className="flex items-center justify-center gap-2 flex-wrap">
+            <EmptyState
+              art="inbox"
+              title="No applications yet"
+              hint="Add one yourself, paste a posting for Scout to read, or just say: “I applied to Stripe for a backend internship on LinkedIn today.”"
+              action={
+                <>
+                  <button
+                    onClick={() => {
+                      setEditApp(null);
+                      setShowForm(true);
+                    }}
+                    className="btn-primary"
+                  >
+                    <Plus size={15} /> Add application
+                  </button>
+                  <button onClick={() => setQuickAddText('')} className="btn-secondary">
+                    <Sparkles size={15} /> Paste a posting
+                  </button>
+                </>
+              }
+            />
+          ) : (
+            <EmptyState
+              art="search"
+              title="Nothing matches"
+              hint="Loosen a filter and try again."
+              action={
                 <button
                   onClick={() => {
-                    setEditApp(null);
-                    setShowForm(true);
+                    setFilters(EMPTY_FILTERS);
+                    setStarredOnly(false);
+                    setShowArchived(false);
                   }}
-                  className="btn-primary"
+                  className="btn-secondary"
                 >
-                  <Plus size={15} /> Add application
+                  <X size={14} /> Clear filters
                 </button>
-                <button onClick={() => emitUi({ type: 'open-assistant' })} className="btn-secondary">
-                  <Sparkles size={15} /> Ask Scout to add it
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <h3 className="text-light-900 dark:text-white font-semibold text-lg mb-2">Nothing matches</h3>
-              <p className="text-sm text-light-600 dark:text-dark-300">Loosen a filter and try again.</p>
-            </>
+              }
+            />
           )}
         </div>
       ) : view === 'board' ? (
@@ -667,6 +974,16 @@ export default function Dashboard() {
                     </option>
                   ))}
                 </select>
+              )}
+              {selectedApps.length >= 2 && selectedApps.length <= 3 && (
+                <button onClick={() => setCompareIds(selectedApps.map(a => a.id))} className="btn-secondary btn-sm">
+                  <Columns3 size={12} /> Compare
+                </button>
+              )}
+              {selectedApps.length === 1 && (
+                <button onClick={() => saveAsTemplate(selectedApps[0])} className="btn-secondary btn-sm">
+                  <Copy size={12} /> Save as template
+                </button>
               )}
               <PrintAllButton applications={selectedApps} />
               {confirmBulkDelete ? (
@@ -729,17 +1046,70 @@ export default function Dashboard() {
         />
       )}
 
-      {detailApp && !showForm && (
+      {detailApp && !showForm && !focusApp && (
         <ApplicationDetail
           application={detailApp}
           onClose={() => setDetailApp(null)}
           onEdit={() => openEdit(detailApp)}
-          onDelete={async () => {
-            await deleteApplication(detailApp.id);
+          onFocus={() => {
+            setFocusApp(detailApp);
             setDetailApp(null);
+          }}
+          onDelete={async () => {
+            const snapshot = detailApp;
+            await deleteApplication(snapshot.id);
+            setDetailApp(null);
+            play('click');
+            // Recreating gives a new row id, so undo restores the record's content
+            // rather than its identity — which is what the user actually wants back.
+            pushUndo(`Deleted ${snapshot.company_name}.`, async () => {
+              await createApplication({
+                company_name: snapshot.company_name,
+                company_description: snapshot.company_description,
+                resume_used: snapshot.resume_used,
+                cover_letter_used: snapshot.cover_letter_used,
+                response_status: snapshot.response_status,
+                interview_offered: snapshot.interview_offered,
+                final_status: snapshot.final_status,
+                date_applied: snapshot.date_applied,
+                salary_info: snapshot.salary_info,
+                interview_questions: snapshot.interview_questions,
+                tasks_to_complete: snapshot.tasks_to_complete,
+                resume_path: snapshot.resume_path,
+                cover_letter_path: snapshot.cover_letter_path,
+                role_applied_to: snapshot.role_applied_to,
+                platform_applied_on: snapshot.platform_applied_on,
+              });
+            });
           }}
         />
       )}
+
+      {focusApp && (
+        <FocusMode
+          application={focusApp}
+          interviews={interviewsMap[focusApp.id] || []}
+          onClose={() => setFocusApp(null)}
+        />
+      )}
+
+      {compareIds && compareIds.length >= 2 && (
+        <CompareView
+          applications={applications.filter(a => compareIds.includes(a.id))}
+          interviewsMap={interviewsMap}
+          onClose={() => setCompareIds(null)}
+          onOpen={app => {
+            setCompareIds(null);
+            setDetailApp(app);
+          }}
+        />
+      )}
+
+      {showWrapped && <WrappedCard data={wrapped} onClose={() => setShowWrapped(false)} />}
+
+      {quickAddText !== null && <QuickAdd initialText={quickAddText} onClose={() => setQuickAddText(null)} />}
+
+      {showOnboarding && <Onboarding onClose={() => setShowOnboarding(false)} />}
     </PageShell>
   );
 }

@@ -10,32 +10,36 @@ export default {
         mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
       },
       colors: {
-        // Warm gold -> coral accent, shared across light & dark themes
+        /**
+         * Warm gold -> coral accent, now resolved at *runtime* from CSS custom
+         * properties so Settings can swap the whole palette with no rebuild.
+         * index.css holds the Coral defaults; lib/accent.ts writes the others.
+         */
         primary: {
-          50: '#FFF8EC',
-          100: '#FFEFD4',
-          200: '#FFDFA8',
-          300: '#FFC974',
-          400: '#FFB245',
-          500: '#FB923C',
-          600: '#EA7328',
-          700: '#C2551C',
-          800: '#9A431B',
-          900: '#7C3919',
-          950: '#451D0B',
+          50: 'rgb(var(--color-primary-50) / <alpha-value>)',
+          100: 'rgb(var(--color-primary-100) / <alpha-value>)',
+          200: 'rgb(var(--color-primary-200) / <alpha-value>)',
+          300: 'rgb(var(--color-primary-300) / <alpha-value>)',
+          400: 'rgb(var(--color-primary-400) / <alpha-value>)',
+          500: 'rgb(var(--color-primary-500) / <alpha-value>)',
+          600: 'rgb(var(--color-primary-600) / <alpha-value>)',
+          700: 'rgb(var(--color-primary-700) / <alpha-value>)',
+          800: 'rgb(var(--color-primary-800) / <alpha-value>)',
+          900: 'rgb(var(--color-primary-900) / <alpha-value>)',
+          950: 'rgb(var(--color-primary-950) / <alpha-value>)',
         },
         accent: {
-          50: '#FFF1F2',
-          100: '#FFE0E2',
-          200: '#FFC6CA',
-          300: '#FF9EA6',
-          400: '#FF7E7E',
-          500: '#F35D63',
-          600: '#DC3F48',
-          700: '#B92F38',
-          800: '#992A32',
-          900: '#7F2830',
-          950: '#4A161B',
+          50: 'rgb(var(--color-accent-50) / <alpha-value>)',
+          100: 'rgb(var(--color-accent-100) / <alpha-value>)',
+          200: 'rgb(var(--color-accent-200) / <alpha-value>)',
+          300: 'rgb(var(--color-accent-300) / <alpha-value>)',
+          400: 'rgb(var(--color-accent-400) / <alpha-value>)',
+          500: 'rgb(var(--color-accent-500) / <alpha-value>)',
+          600: 'rgb(var(--color-accent-600) / <alpha-value>)',
+          700: 'rgb(var(--color-accent-700) / <alpha-value>)',
+          800: 'rgb(var(--color-accent-800) / <alpha-value>)',
+          900: 'rgb(var(--color-accent-900) / <alpha-value>)',
+          950: 'rgb(var(--color-accent-950) / <alpha-value>)',
         },
         // Bright, airy warm neutrals for light mode
         light: {
@@ -78,6 +82,13 @@ export default {
         'scale-in': { '0%': { opacity: '0', transform: 'scale(.96)' }, '100%': { opacity: '1', transform: 'scale(1)' } },
         shimmer: { '100%': { transform: 'translateX(100%)' } },
         'pulse-ring': { '0%': { transform: 'scale(.8)', opacity: '.7' }, '100%': { transform: 'scale(1.6)', opacity: '0' } },
+        'mesh-drift': {
+          '0%': { transform: 'rotate(0deg) scale(1.15)' },
+          '50%': { transform: 'rotate(180deg) scale(1.3)' },
+          '100%': { transform: 'rotate(360deg) scale(1.15)' },
+        },
+        'draw-in': { '0%': { strokeDashoffset: '400' }, '100%': { strokeDashoffset: '0' } },
+        'count-up': { '0%': { opacity: '0', transform: 'translateY(6px) scale(.97)' }, '100%': { opacity: '1', transform: 'none' } },
       },
       animation: {
         'fade-in': 'fade-in .2s ease-out both',
@@ -86,6 +97,9 @@ export default {
         'scale-in': 'scale-in .2s cubic-bezier(.22,1,.36,1) both',
         shimmer: 'shimmer 1.6s infinite',
         'pulse-ring': 'pulse-ring 1.6s ease-out infinite',
+        'mesh-drift': 'mesh-drift 38s linear infinite',
+        'draw-in': 'draw-in 1.1s ease-out both',
+        'count-up': 'count-up .4s cubic-bezier(.22,1,.36,1) both',
       },
     },
   },

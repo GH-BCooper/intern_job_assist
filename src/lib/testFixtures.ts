@@ -1,4 +1,4 @@
-import { DEFAULT_PREFERENCES, type StoreShape } from './store';
+import { DEFAULT_PREFERENCES, EMPTY_STORE, type StoreShape } from './store';
 import type { Application, InterviewDate } from './supabase';
 
 export function makeApplication(overrides: Partial<Application> = {}): Application {
@@ -40,24 +40,8 @@ export function makeInterviewDate(overrides: Partial<InterviewDate> = {}): Inter
 
 export function makeEmptyStore(overrides: Partial<StoreShape> = {}): StoreShape {
   return {
-    tags: [],
-    applicationTags: [],
-    reminders: [],
-    notes: [],
-    contacts: [],
-    tasks: [],
-    goals: [],
-    savedViews: [],
-    activity: [],
-    resumes: [],
-    aiThreads: [],
-    preferences: DEFAULT_PREFERENCES,
-    stageOverrides: {},
-    archived: [],
-    starred: [],
-    automationRules: [],
-    automationLog: [],
-    automationSeen: {},
+    ...structuredClone(EMPTY_STORE),
+    preferences: { ...DEFAULT_PREFERENCES },
     ...overrides,
   };
 }

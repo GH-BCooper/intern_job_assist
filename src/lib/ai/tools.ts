@@ -9,6 +9,9 @@ import type { ToolSchema } from './providers';
 import {
   addAutomationRule,
   addContact,
+  addScoutMemory,
+  addSrsCards,
+  addStarStory,
   addNote,
   addReminder,
   addResumeVersion,
@@ -19,21 +22,36 @@ import {
   read,
   savePreferences,
   setGoal,
+  setPriority,
   setStage,
   toggleApplicationTag,
   toggleArchive,
   toggleAutomationRule,
   toggleStar,
   updateReminder,
+  touchContact,
   upsertTag,
   type AutomationActionType,
   type AutomationTriggerType,
   type ReminderKind,
 } from '../store';
 import { evaluateAutomations } from '../automation';
-import { computeAnalytics, stageOf, stagePatch, STAGES, type Stage } from '../insights';
+import {
+  computeAnalytics,
+  offerProjection,
+  stageOf,
+  stagePatch,
+  STAGES,
+  timingInsight,
+  weeklyWrapped,
+  type Stage,
+} from '../insights';
 import { emitDeferrable, emitUi } from '../uiBus';
 import { dayKey, fmtDate, ts } from '../format';
+import { matchResumeToJd, matchVerdict } from '../match';
+import { findDuplicatePairs, findDuplicates } from '../duplicates';
+import { buildIcs, downloadIcs, interviewEvent } from '../ics';
+import { extractQuestions } from '../srs';
 
 export type ToolBridge = {
   applications: Application[];
@@ -489,6 +507,93 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
     name: 'delete_automation',
     description: 'Permanently delete an automation rule by name.',
     parameters: S.obj({ name: S.string('Automation rule name (fuzzy match is fine).') }, ['name']),
+  },
+  {
+    name: 'score_resume_against_jd',
+    description:
+      'Score a job description against a stored resume version (or pasted resume text) and report keyword coverage plus the terms the resume never mentions. Runs locally — no external call.',
+    parameters: S.obj(
+      {
+        job_description: S.string('The full job posting text.'),
+        resume_label: S.string('Label of a stored resume version to score against. Omit to use resume_text.'),
+        resume_text: S.string('Raw resume text, if it is not stored as a version.'),
+      },
+      ['job_description'],
+    ),
+  },
+  {
+    name: 'find_duplicate_applications',
+    description: 'Find applications that look like accidental double entries, by fuzzy company and role matching.',
+    parameters: S.obj({
+      company: S.string('Optional: check one company name against the tracker instead of scanning everything.'),
+      role: S.string('Optional role to pair with company.'),
+    }),
+  },
+  {
+    name: 'suggest_next_companies',
+    description:
+      'Suggest where to apply next by pattern-matching the user\'s own platforms, roles and tags. Uses only their data — no web search.',
+    parameters: S.obj({ limit: S.number('How many suggestions (default 6).') }),
+  },
+  {
+    name: 'generate_ics_invite',
+    description: 'Generate and download a calendar invite (.ics) for an application\'s upcoming interviews.',
+    parameters: S.obj({ application: APP_REF }, ['application']),
+  },
+  {
+    name: 'remember_preference',
+    description:
+      'Store a standing preference so you do not have to be told twice (e.g. "always use my Backend resume for SWE roles"). Injected into your context from then on.',
+    parameters: S.obj({ note: S.string('The preference, in one short line.') }, ['note']),
+  },
+  {
+    name: 'set_priority',
+    description: 'Set how much the user wants a role, 1 (low) to 5 (dream). Separate from starring.',
+    parameters: S.obj({ application: APP_REF, priority: S.number('1 to 5, or 0 to clear.') }, ['application', 'priority']),
+  },
+  {
+    name: 'add_star_story',
+    description: 'Save a reusable STAR story (Situation, Task, Action, Result) tagged by competency.',
+    parameters: S.obj(
+      {
+        title: S.string('Short name for the story.'),
+        competency: S.string('e.g. leadership, conflict, failure, ownership.'),
+        situation: S.string('The situation.'),
+        task: S.string('The task.'),
+        action: S.string('What you did.'),
+        result: S.string('The measurable result.'),
+      },
+      ['title'],
+    ),
+  },
+  {
+    name: 'create_prep_cards',
+    description:
+      'Turn interview questions into spaced-repetition flashcards for the Prep trainer. Pass questions directly, or an application to pull its stored questions from.',
+    parameters: S.obj({
+      application: APP_REF,
+      questions: S.strings('Questions to drill.'),
+    }),
+  },
+  {
+    name: 'get_timing_patterns',
+    description: 'Report whether the day of the week the user applies correlates with hearing back.',
+    parameters: S.obj({}),
+  },
+  {
+    name: 'get_projection',
+    description: 'Project how many more applications are needed for one expected offer, from the user\'s own conversion rates.',
+    parameters: S.obj({}),
+  },
+  {
+    name: 'get_weekly_wrapped',
+    description: 'The week in review: applications out, interviews, offers, best platform, streak.',
+    parameters: S.obj({}),
+  },
+  {
+    name: 'log_contact_outreach',
+    description: 'Record that the user messaged a saved contact, which resets their follow-up clock.',
+    parameters: S.obj({ name: S.string('Contact name.') }, ['name']),
   },
   {
     name: 'run_automations_now',
@@ -1036,11 +1141,197 @@ export async function executeTool(name: string, args: Args, bridge: ToolBridge):
       return ok({ deleted: target.name });
     }
 
+    case 'score_resume_against_jd': {
+      const jd = str(args, 'job_description');
+      if (!jd) return ok({ error: 'Pass the job description text.' });
+      const label = str(args, 'resume_label');
+      let resumeText = str(args, 'resume_text');
+      let usedLabel = 'pasted text';
+      if (!resumeText) {
+        const version = label
+          ? store.resumes.find(r => r.label.toLowerCase().includes(label.toLowerCase()))
+          : store.resumes.find(r => !!r.content) || store.resumes[0];
+        if (!version?.content) {
+          return ok({
+            error: label
+              ? `No stored resume version named "${label}" has any text saved.`
+              : 'No resume version with text is stored. Add one in Workspace → Resumes, or pass resume_text.',
+            available: store.resumes.map(r => r.label),
+          });
+        }
+        resumeText = version.content;
+        usedLabel = version.label;
+      }
+      const result = matchResumeToJd(resumeText, jd);
+      return ok({
+        resume: usedLabel,
+        score: `${result.score}%`,
+        similarity: `${result.similarity}%`,
+        matched_keywords: result.matched.map(m => m.term),
+        missing_keywords: result.missing.map(m => m.term),
+        verdict: matchVerdict(result),
+      });
+    }
+
+    case 'find_duplicate_applications': {
+      const company = str(args, 'company');
+      if (company) {
+        const hits = findDuplicates(
+          { company_name: company, role_applied_to: str(args, 'role') },
+          bridge.applications,
+        );
+        return ok({
+          checked: company,
+          matches: hits.map(h => ({
+            id: h.application.id,
+            company: h.application.company_name,
+            role: h.application.role_applied_to,
+            confidence: `${Math.round(h.score * 100)}%`,
+            reason: h.reason,
+          })),
+        });
+      }
+      const groups = findDuplicatePairs(bridge.applications);
+      return ok({
+        duplicate_groups: groups.map(g =>
+          g.map(h => ({ id: h.application.id, company: h.application.company_name, role: h.application.role_applied_to })),
+        ),
+        count: groups.length,
+      });
+    }
+
+    case 'suggest_next_companies': {
+      const limit = Math.max(1, Math.min(12, num(args, 'limit', 6)));
+      const a = computeAnalytics(bridge.applications, bridge.interviewsMap, store, store.preferences.followUpDays);
+      const strongPlatforms = a.byPlatform.filter(p => p.total >= 2).sort((x, y) => y.rate - x.rate).slice(0, 3);
+      const rolePattern = a.topRoles.slice(0, 3).map(r => r.role);
+      const tracked = new Set(bridge.applications.map(app => app.company_name.toLowerCase()));
+
+      // Companies the user already reached an interview at are the best signal
+      // for the *kind* of company to try next; wishlist entries not yet applied
+      // to are the most actionable suggestions of all.
+      const notYetApplied = bridge.applications
+        .filter(app => stageOf(app, store.stageOverrides) === 'Wishlist')
+        .map(app => ({ company: app.company_name, why: 'Already on your wishlist, never submitted' }));
+
+      const converted = bridge.applications
+        .filter(app => app.interview_offered || (bridge.interviewsMap[app.id] || []).length)
+        .map(app => app.company_name);
+
+      return ok({
+        act_on_first: notYetApplied.slice(0, limit),
+        your_strongest_platforms: strongPlatforms.map(p => ({ platform: p.platform, interview_rate: `${p.rate}%` })),
+        roles_you_target: rolePattern,
+        companies_that_converted: converted.slice(0, 8),
+        tracked_count: tracked.size,
+        guidance:
+          'Suggest companies similar in size, sector and stack to the ones that converted, sourced through the platforms with the best rate. Say plainly that these are inferred from their own data, not a live job search.',
+      });
+    }
+
+    case 'generate_ics_invite': {
+      const app = resolveApp(bridge, str(args, 'application'));
+      if (!app) return ok({ error: 'No matching application.' });
+      const rounds = (bridge.interviewsMap[app.id] || []).filter(iv => ts(iv.interview_date) >= Date.now() - 86_400_000);
+      if (!rounds.length) return ok({ error: `${app.company_name} has no upcoming interview dates to export.` });
+      const events = rounds
+        .map(iv => interviewEvent(app, iv, store.interviewMeta[iv.id]?.timezone))
+        .filter((e): e is NonNullable<typeof e> => !!e);
+      downloadIcs(`${app.company_name.replace(/[^\w.-]+/g, '-').toLowerCase()}-interview`, buildIcs(events));
+      return ok({ downloaded: `${events.length} event(s) for ${app.company_name}` });
+    }
+
+    case 'remember_preference': {
+      const note = str(args, 'note');
+      if (!note) return ok({ error: 'Nothing to remember.' });
+      addScoutMemory(note);
+      logActivity(`Scout remembered: ${note}`, { actor: 'ai', kind: 'memory' });
+      return ok({ remembered: note, total: read().preferences.scoutMemory.length });
+    }
+
+    case 'set_priority': {
+      const app = resolveApp(bridge, str(args, 'application'));
+      if (!app) return ok({ error: 'No matching application.' });
+      const value = Math.max(0, Math.min(5, Math.round(num(args, 'priority', 0))));
+      setPriority(app.id, value);
+      return ok({ company: app.company_name, priority: value || 'cleared' });
+    }
+
+    case 'add_star_story': {
+      const title = str(args, 'title');
+      if (!title) return ok({ error: 'A story needs a title.' });
+      const story = addStarStory({
+        title,
+        competency: str(args, 'competency'),
+        situation: str(args, 'situation'),
+        task: str(args, 'task'),
+        action: str(args, 'action'),
+        result: str(args, 'result'),
+      });
+      return ok({ saved: story.title, id: story.id });
+    }
+
+    case 'create_prep_cards': {
+      const explicit = list(args, 'questions');
+      let questions = explicit;
+      let source = 'the questions you passed';
+      if (!questions.length) {
+        const app = resolveApp(bridge, str(args, 'application'));
+        if (!app) return ok({ error: 'Pass questions, or an application whose stored questions I should use.' });
+        const learnings = bridge.learningsMap[app.id];
+        questions = extractQuestions([app.interview_questions, learnings?.questions_asked].filter(Boolean).join('\n'));
+        source = app.company_name;
+      }
+      if (!questions.length) return ok({ error: 'No questions found to turn into cards.' });
+      const added = addSrsCards(questions.map(q => ({ question: q })));
+      return ok({ added, skipped_as_duplicates: questions.length - added, source });
+    }
+
+    case 'get_timing_patterns': {
+      const insight = timingInsight(bridge.applications, bridge.interviewsMap);
+      return ok({
+        headline: insight.headline,
+        best_days: insight.bestDays,
+        worst_days: insight.worstDays,
+        by_day: insight.days
+          .filter(d => d.applications > 0)
+          .map(d => ({ day: d.day, applications: d.applications, interview_rate: `${d.rate}%`, avg_days_to_interview: d.avgResponseDays })),
+      });
+    }
+
+    case 'get_projection': {
+      const a = computeAnalytics(bridge.applications, bridge.interviewsMap, store, store.preferences.followUpDays);
+      const projection = offerProjection(a);
+      return ok({
+        headline: projection.headline,
+        applications_to_one_expected_offer: projection.applicationsToOffer,
+        weeks_at_current_pace: projection.weeksToOffer,
+        interview_rate: `${projection.interviewRate}%`,
+        interview_to_offer_rate: `${projection.interviewToOfferRate}%`,
+        applications_per_week: projection.perWeek,
+        confident: projection.confident,
+      });
+    }
+
+    case 'get_weekly_wrapped': {
+      const a = computeAnalytics(bridge.applications, bridge.interviewsMap, store, store.preferences.followUpDays);
+      return ok(weeklyWrapped(bridge.applications, bridge.interviewsMap, a));
+    }
+
+    case 'log_contact_outreach': {
+      const name = str(args, 'name').toLowerCase();
+      const contact = store.contacts.find(c => c.name.toLowerCase().includes(name));
+      if (!contact) return ok({ error: `No saved contact matching "${name}".` });
+      touchContact(contact.id);
+      return ok({ logged: contact.name, at: new Date().toISOString() });
+    }
+
     case 'run_automations_now': {
       const fired = await evaluateAutomations({
         applications: bridge.applications,
         interviewsMap: bridge.interviewsMap,
         updateApplication: bridge.updateApplication,
+        createApplication: data => bridge.createApplication(data as ApplicationInsert),
       });
       return ok({ fired });
     }
@@ -1155,6 +1446,12 @@ export const WRITE_TOOLS = new Set([
   'toggle_automation',
   'delete_automation',
   'run_automations_now',
+  'remember_preference',
+  'set_priority',
+  'add_star_story',
+  'create_prep_cards',
+  'generate_ics_invite',
+  'log_contact_outreach',
 ]);
 
 export function markSuggestionsSeen() {

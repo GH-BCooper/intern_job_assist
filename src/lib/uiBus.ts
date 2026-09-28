@@ -11,9 +11,23 @@ export type UiEvent =
   | { type: 'new-application'; prefill?: Record<string, unknown> }
   | { type: 'open-assistant'; prompt?: string }
   | { type: 'open-palette' }
-  | { type: 'toast'; level: 'info' | 'success' | 'error'; message: string }
+  | { type: 'toast'; level: 'info' | 'success' | 'error'; message: string; undoId?: string }
   | { type: 'refresh' }
-  | { type: 'set-theme'; theme: 'light' | 'dark' };
+  | { type: 'set-theme'; theme: 'light' | 'dark' }
+  /** Distraction-free single-application shell. */
+  | { type: 'open-focus'; id: string }
+  /** The shareable week-in-review card. */
+  | { type: 'open-wrapped' }
+  /** Side-by-side offer comparison for the given applications. */
+  | { type: 'compare'; ids: string[] }
+  /** Board grouping within a column. */
+  | { type: 'set-swimlane'; swimlane: 'none' | 'platform' | 'tag' | 'priority' }
+  /** Pre-filled quick-add from a pasted job description. */
+  | { type: 'quick-add'; text: string }
+  /** First-run guided onboarding. */
+  | { type: 'open-onboarding' }
+  /** Screen-reader announcement, routed to the app's aria-live region. */
+  | { type: 'announce'; message: string };
 
 type Handler = (e: UiEvent) => void;
 
@@ -41,13 +55,31 @@ export function toast(message: string, level: 'info' | 'success' | 'error' = 'in
 }
 
 /**
+ * Announces a state change to assistive technology.
+ *
+ * Toasts and stage moves were purely visual; this routes the same words into a
+ * polite aria-live region so screen readers hear them too.
+ */
+export function announce(message: string) {
+  emitUi({ type: 'announce', message });
+}
+
+/**
  * Events aimed at the dashboard can arrive while another route is mounted — the
  * assistant navigates and acts in the same tick. Those are parked here and
  * replayed by the dashboard as soon as it mounts.
  */
 const pending: UiEvent[] = [];
 
-const DEFERRABLE = new Set(['open-application', 'set-view', 'set-filters', 'new-application']);
+const DEFERRABLE = new Set([
+  'open-application',
+  'set-view',
+  'set-filters',
+  'new-application',
+  'open-focus',
+  'compare',
+  'quick-add',
+]);
 
 let dashboardMounted = false;
 

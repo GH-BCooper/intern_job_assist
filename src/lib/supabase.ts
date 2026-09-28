@@ -90,16 +90,70 @@ export async function uploadCoverLetterFile(
   return path;
 }
 
-export function getResumeUrl(resumePath: string): string | null {
-  if (!resumePath) return null;
-  const { data } = supabase.storage.from('applications').getPublicUrl(resumePath);
+/** How long a signed document URL stays valid. */
+export const SIGNED_URL_TTL_SECONDS = 60 * 60;
+
+/**
+ * A time-limited signed URL for an uploaded document.
+ *
+ * Resumes and cover letters routinely carry a home address and a phone number,
+ * so a link that expires is a better default than a permanently public one.
+ * Signed URLs are on the same free tier as public ones.
+ */
+export async function getSignedFileUrl(path: string, expiresIn = SIGNED_URL_TTL_SECONDS): Promise<string | null> {
+  if (!path) return null;
+  const { data, error } = await supabase.storage.from('applications').createSignedUrl(path, expiresIn);
+  if (error) return null;
+  return data?.signedUrl || null;
+}
+
+export function getPublicFileUrl(path: string): string | null {
+  if (!path) return null;
+  const { data } = supabase.storage.from('applications').getPublicUrl(path);
   return data?.publicUrl || null;
 }
 
+/**
+ * Resolves a stored path to a viewable URL.
+ *
+ * Prefers a signed URL and falls back to the public one, so a bucket that was
+ * set up as public before this change keeps working.
+ */
+export async function getFileUrl(path: string, opts: { signed?: boolean } = {}): Promise<string | null> {
+  if (!path) return null;
+  if (opts.signed !== false) {
+    const signed = await getSignedFileUrl(path);
+    if (signed) return signed;
+  }
+  return getPublicFileUrl(path);
+}
+
+/** Kept for callers that only need a URL synchronously; prefer getFileUrl. */
+export function getResumeUrl(resumePath: string): string | null {
+  return getPublicFileUrl(resumePath);
+}
+
 export function getCoverLetterUrl(coverLetterPath: string): string | null {
-  if (!coverLetterPath) return null;
-  const { data } = supabase.storage.from('applications').getPublicUrl(coverLetterPath);
-  return data?.publicUrl || null;
+  return getPublicFileUrl(coverLetterPath);
+}
+
+/** Uploads a real file for a resume *version* (not tied to one application). */
+export async function uploadResumeVersionFile(
+  userId: string,
+  versionId: string,
+  file: File,
+): Promise<{ path: string; name: string; size: number } | null> {
+  const ext = file.name.split('.').pop() || 'pdf';
+  const path = `${userId}/resume-versions/${versionId}.${ext}`;
+  const { error } = await supabase.storage.from('applications').upload(path, file, { upsert: true });
+  if (error) return null;
+  return { path, name: file.name, size: file.size };
+}
+
+export async function deleteStoredFile(path: string): Promise<boolean> {
+  if (!path) return true;
+  const { error } = await supabase.storage.from('applications').remove([path]);
+  return !error;
 }
 
 export async function downloadFile(url: string): Promise<Blob | null> {

@@ -1,9 +1,10 @@
-import { Calendar, CalendarClock, MapPin, Star, Wallet } from 'lucide-react';
+import { Calendar, CalendarClock, Flame, MapPin, Star, UserCheck, Wallet } from 'lucide-react';
 import type { Application, InterviewDate } from '../lib/supabase';
-import { STAGE_META, stageOf, type Stage } from '../lib/insights';
+import { STAGE_META, stageLabel, stageOf, type Stage } from '../lib/insights';
 import { useStore } from '../hooks/useStore';
 import { toggleStar } from '../lib/store';
 import { avatarGradient, daysUntil, fmtDate, initials, truncate } from '../lib/format';
+import CompanyLogo from './ui/CompanyLogo';
 
 export const RESPONSE_BADGE: Record<string, string> = {
   Pending: 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300',
@@ -20,11 +21,27 @@ export const FINAL_BADGE: Record<string, string> = {
   Withdrawn: 'bg-light-200 dark:bg-dark-800 text-light-600 dark:text-dark-400',
 };
 
-export function StageDot({ stage }: { stage: Stage }) {
+export function StageDot({ stage, label }: { stage: Stage; label?: string }) {
   return (
     <span className="inline-flex items-center gap-1.5">
       <span className={`w-1.5 h-1.5 rounded-full ${STAGE_META[stage].dot}`} />
-      <span className={`text-[11px] font-semibold ${STAGE_META[stage].accent}`}>{stage}</span>
+      <span className={`text-[11px] font-semibold ${STAGE_META[stage].accent}`}>{label || stage}</span>
+    </span>
+  );
+}
+
+/** The 1–5 interest rating, deliberately not a star (that means "shortlisted"). */
+export function PriorityFlames({ value, size = 10 }: { value: number; size?: number }) {
+  if (!value) return null;
+  return (
+    <span
+      className="inline-flex items-center gap-[1px] text-primary-500"
+      title={`Priority ${value} of 5`}
+      aria-label={`Priority ${value} of 5`}
+    >
+      {Array.from({ length: value }).map((_, i) => (
+        <Flame key={i} size={size} fill="currentColor" />
+      ))}
     </span>
   );
 }
@@ -60,6 +77,8 @@ export default function ApplicationCard({ application: app, interviews = [], onC
 
   const next = interviews.find(i => daysUntil(i.interview_date) !== null && (daysUntil(i.interview_date) as number) >= 0);
   const countdown = next ? (daysUntil(next.interview_date) as number) : null;
+  const priority = store.priorities[app.id] || 0;
+  const referrer = store.referrals[app.id] ? store.contacts.find(c => c.id === store.referrals[app.id]) : null;
 
   return (
     <div
@@ -88,7 +107,7 @@ export default function ApplicationCard({ application: app, interviews = [], onC
       </button>
 
       <div className="flex items-start gap-3 pr-6">
-        <CompanyAvatar name={app.company_name} size={compact ? 32 : 40} />
+        <CompanyLogo name={app.company_name} size={compact ? 32 : 40} />
         <div className="min-w-0 flex-1">
           <h3 className={`font-semibold text-light-900 dark:text-white truncate ${compact ? 'text-sm' : 'text-[15px]'}`}>
             {app.company_name}
@@ -96,11 +115,18 @@ export default function ApplicationCard({ application: app, interviews = [], onC
           {app.role_applied_to && (
             <p className="text-xs text-light-600 dark:text-dark-300 truncate">{app.role_applied_to}</p>
           )}
-          <div className="mt-1">
-            <StageDot stage={stage} />
+          <div className="mt-1 flex items-center gap-2 flex-wrap">
+            <StageDot stage={stage} label={stageLabel(stage, store.preferences)} />
+            <PriorityFlames value={priority} />
           </div>
         </div>
       </div>
+
+      {referrer && (
+        <p className="mt-2 inline-flex items-center gap-1 text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
+          <UserCheck size={11} /> via {referrer.name}
+        </p>
+      )}
 
       {countdown !== null && (
         <div className="mt-3 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-primary-50 dark:bg-primary-950/40 border border-primary-200 dark:border-primary-900">

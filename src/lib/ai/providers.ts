@@ -20,8 +20,11 @@ export type ToolSchema = {
   };
 };
 
+/** A pasted or picked image, as a base64 data payload. */
+export type ImageAttachment = { mimeType: string; data: string };
+
 export type ChatMessage =
-  | { role: 'system' | 'user' | 'assistant'; content: string }
+  | { role: 'system' | 'user' | 'assistant'; content: string; images?: ImageAttachment[] }
   | { role: 'assistant'; content: string; toolCalls: ToolCall[] }
   | { role: 'tool'; toolCallId: string; name: string; content: string };
 
@@ -38,6 +41,10 @@ export type ProviderInfo = {
   keyLabel: string;
   free: string;
   needsKey: boolean;
+  /** Accepts image input (used by "read this job posting screenshot"). */
+  vision?: boolean;
+  /** Known free-tier ceiling in requests per day; used by the usage meter. */
+  dailyLimit?: number;
 };
 
 export const PROVIDERS: Record<AiProviderId, ProviderInfo> = {
@@ -54,6 +61,8 @@ export const PROVIDERS: Record<AiProviderId, ProviderInfo> = {
     keyLabel: 'Google AI Studio API key',
     free: 'Free tier: generous daily request limit, no card required.',
     needsKey: true,
+    vision: true,
+    dailyLimit: 1500,
   },
   groq: {
     id: 'groq',
@@ -67,6 +76,7 @@ export const PROVIDERS: Record<AiProviderId, ProviderInfo> = {
     keyLabel: 'Groq API key',
     free: 'Free tier with high rate limits, no card required.',
     needsKey: true,
+    dailyLimit: 14400,
   },
   openrouter: {
     id: 'openrouter',
@@ -81,6 +91,7 @@ export const PROVIDERS: Record<AiProviderId, ProviderInfo> = {
     keyLabel: 'OpenRouter API key',
     free: 'Models suffixed `:free` cost nothing.',
     needsKey: true,
+    dailyLimit: 200,
   },
   ollama: {
     id: 'ollama',
@@ -116,6 +127,7 @@ export class AiError extends Error {
 
 type GeminiPart =
   | { text: string }
+  | { inlineData: { mimeType: string; data: string } }
   | { functionCall: { name: string; args: Record<string, unknown> } }
   | { functionResponse: { name: string; response: Record<string, unknown> } };
 
@@ -144,7 +156,11 @@ function toGemini(messages: ChatMessage[]) {
       if (parts.length) contents.push({ role: 'model', parts });
       return;
     }
-    contents.push({ role: 'user', parts: [{ text: m.content }] });
+    const parts: GeminiPart[] = [{ text: m.content }];
+    if ('images' in m && m.images?.length) {
+      m.images.forEach(img => parts.push({ inlineData: { mimeType: img.mimeType, data: img.data } }));
+    }
+    contents.push({ role: 'user', parts });
   });
 
   return { systemInstruction: systemParts.join('\n\n'), contents };
@@ -221,6 +237,18 @@ function toOpenAi(messages: ChatMessage[]) {
           type: 'function' as const,
           function: { name: tc.name, arguments: JSON.stringify(tc.args) },
         })),
+      };
+    }
+    if (m.role === 'user' && 'images' in m && m.images?.length) {
+      return {
+        role: 'user' as const,
+        content: [
+          { type: 'text' as const, text: m.content },
+          ...m.images.map(img => ({
+            type: 'image_url' as const,
+            image_url: { url: `data:${img.mimeType};base64,${img.data}` },
+          })),
+        ],
       };
     }
     return { role: m.role, content: m.content };
@@ -320,6 +348,107 @@ async function describeHttpError(res: Response): Promise<string> {
   if (res.status === 404) return `Model not found for this provider. ${detail}`;
   if (res.status === 429) return `Rate limit reached on the free tier. Wait a moment or switch model. ${detail}`;
   return `Provider error ${res.status}: ${detail}`;
+}
+
+/* ------------------------------ streaming ------------------------------ */
+
+/**
+ * Streams a tool-free reply token by token.
+ *
+ * Both Gemini and the OpenAI-compatible endpoints serve SSE on their free
+ * tiers, so this is a pure perceived-latency win at no cost. Tool-calling
+ * rounds still use the non-streaming path: partial tool arguments are not
+ * useful, and the agent loop needs a complete call before it can execute one.
+ */
+export async function streamChat(
+  cfg: ProviderConfig,
+  messages: ChatMessage[],
+  onToken: (delta: string) => void,
+): Promise<ChatResult> {
+  if (PROVIDERS[cfg.provider].needsKey && !cfg.apiKey) {
+    throw new AiError(`Add your ${PROVIDERS[cfg.provider].keyLabel} in Settings to use the assistant.`);
+  }
+
+  const { url, headers, body } =
+    cfg.provider === 'gemini'
+      ? (() => {
+          const { systemInstruction, contents } = toGemini(messages);
+          const payload: Record<string, unknown> = {
+            contents,
+            generationConfig: { temperature: 0.4, maxOutputTokens: 2048 },
+          };
+          if (systemInstruction) payload.systemInstruction = { parts: [{ text: systemInstruction }] };
+          return {
+            url: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.model)}:streamGenerateContent?alt=sse`,
+            headers: { 'x-goog-api-key': cfg.apiKey } as Record<string, string>,
+            body: payload,
+          };
+        })()
+      : (() => {
+          const endpoint = openAiEndpoint(cfg);
+          return {
+            url: endpoint.url,
+            headers: endpoint.headers,
+            body: {
+              model: cfg.model,
+              messages: toOpenAi(messages),
+              temperature: 0.4,
+              max_tokens: 2048,
+              stream: true,
+            } as Record<string, unknown>,
+          };
+        })();
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) throw new AiError(await describeHttpError(res), res.status === 429 || res.status >= 500);
+  if (!res.body) throw new AiError('This provider returned no stream.');
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let text = '';
+
+  const handlePayload = (payload: string) => {
+    if (!payload || payload === '[DONE]') return;
+    try {
+      const json = JSON.parse(payload) as {
+        candidates?: { content?: { parts?: { text?: string }[] } }[];
+        choices?: { delta?: { content?: string | null } }[];
+      };
+      const delta =
+        json.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') ??
+        json.choices?.[0]?.delta?.content ??
+        '';
+      if (delta) {
+        text += delta;
+        onToken(delta);
+      }
+    } catch {
+      /* a partial or keep-alive frame — the next chunk completes it */
+    }
+  };
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const frames = buffer.split(/\r?\n\r?\n/);
+    buffer = frames.pop() || '';
+    frames.forEach(frame => {
+      frame
+        .split(/\r?\n/)
+        .filter(line => line.startsWith('data:'))
+        .forEach(line => handlePayload(line.slice(5).trim()));
+    });
+  }
+  if (buffer.startsWith('data:')) handlePayload(buffer.slice(5).trim());
+
+  return { text: text.trim(), toolCalls: [] };
 }
 
 export async function chat(cfg: ProviderConfig, messages: ChatMessage[], tools: ToolSchema[] = []): Promise<ChatResult> {

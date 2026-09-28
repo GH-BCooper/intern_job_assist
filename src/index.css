@@ -7,6 +7,38 @@
     --surface: 255 255 255;
     --page: 254 247 236;
     --ring: 251 146 60;
+
+    /* Coral defaults for the runtime accent palette (see lib/accent.ts). */
+    --color-primary-50: 255 248 236;
+    --color-primary-100: 255 239 212;
+    --color-primary-200: 255 223 168;
+    --color-primary-300: 255 201 116;
+    --color-primary-400: 255 178 69;
+    --color-primary-500: 251 146 60;
+    --color-primary-600: 234 115 40;
+    --color-primary-700: 194 85 28;
+    --color-primary-800: 154 67 27;
+    --color-primary-900: 124 57 25;
+    --color-primary-950: 69 29 11;
+
+    --color-accent-50: 255 241 242;
+    --color-accent-100: 255 224 226;
+    --color-accent-200: 255 198 202;
+    --color-accent-300: 255 158 166;
+    --color-accent-400: 255 126 126;
+    --color-accent-500: 243 93 99;
+    --color-accent-600: 220 63 72;
+    --color-accent-700: 185 47 56;
+    --color-accent-800: 153 42 50;
+    --color-accent-900: 127 40 48;
+    --color-accent-950: 74 22 27;
+
+    --grad-1: #FB923C;
+    --grad-2: #FF7E7E;
+    --grad-3: #FFB245;
+
+    /* Settings' base-font-size slider; the rem scale follows it. */
+    --font-scale: 1;
   }
 
   html.dark {
@@ -15,6 +47,7 @@
   }
 
   html {
+    font-size: calc(100% * var(--font-scale));
     font-family: 'DM Sans', Inter, system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -61,6 +94,57 @@
       animation-duration: .01ms !important;
       transition-duration: .01ms !important;
     }
+  }
+
+  /**
+   * High-contrast variant — a third theme on top of light/dark rather than a
+   * separate palette: it hardens borders, drops translucency and removes the
+   * decorative page wash, which is what actually costs legibility.
+   */
+  html.high-contrast body {
+    background-image: none;
+  }
+
+  html.high-contrast {
+    --color-primary-500: 194 85 28;
+    --color-primary-600: 154 67 27;
+  }
+
+  html.high-contrast.dark {
+    --color-primary-400: 255 201 116;
+    --color-primary-500: 255 178 69;
+  }
+
+  html.high-contrast .card,
+  html.high-contrast .panel,
+  html.high-contrast .input-field,
+  html.high-contrast .chip {
+    backdrop-filter: none;
+    border-width: 2px;
+  }
+
+  html.high-contrast .card { background-color: rgb(255 255 255); }
+  html.high-contrast.dark .card { background-color: rgb(20 17 10); }
+  html.high-contrast :focus-visible {
+    outline: 3px solid rgb(var(--ring));
+    outline-offset: 2px;
+  }
+  html.high-contrast .text-gradient {
+    -webkit-text-fill-color: currentColor;
+    background: none;
+  }
+
+  /** Visually hidden but announced — used by the live region and skip link. */
+  .sr-only-live {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 }
 
@@ -154,13 +238,64 @@
 
 @layer utilities {
   .text-gradient {
-    background: linear-gradient(115deg, #FB923C, #FF7E7E 55%, #FFB245);
+    background: linear-gradient(115deg, var(--grad-1), var(--grad-2) 55%, var(--grad-3));
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
   }
 
-  .glow-primary { box-shadow: 0 0 32px rgba(251, 146, 60, 0.22); }
+  .glow-primary { box-shadow: 0 0 32px rgb(var(--color-primary-500) / 0.22); }
+
+  /** Glassy column headers and calendar surfaces — same treatment as the navbar. */
+  .glass {
+    @apply backdrop-blur-xl bg-light-50/70 dark:bg-dark-900/60 border-light-300/80 dark:border-dark-800/80;
+  }
+
+  /** A card being dragged lifts and tilts instead of just fading. */
+  .drag-lift {
+    transform: rotate(-1.6deg) scale(1.03);
+    box-shadow: 0 18px 40px -14px rgb(35 28 17 / 0.35);
+    cursor: grabbing;
+  }
+
+  /** The card that keyboard navigation is currently on. */
+  .kbd-focus {
+    @apply ring-2 ring-primary-500 ring-offset-2 ring-offset-light-200 dark:ring-offset-dark-950;
+  }
+
+  /** Slow conic-gradient drift behind the hero and auth pages only. */
+  .ambient-mesh {
+    position: absolute;
+    inset: -40%;
+    pointer-events: none;
+    opacity: .5;
+    background: conic-gradient(
+      from 0deg,
+      rgb(var(--color-primary-400) / .22),
+      transparent 25%,
+      rgb(var(--color-accent-400) / .18) 50%,
+      transparent 75%,
+      rgb(var(--color-primary-300) / .2)
+    );
+    filter: blur(70px);
+    animation: mesh-drift 38s linear infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ambient-mesh { animation: none; }
+  }
+
+  /** Bento tiles: variable spans on one grid. */
+  .bento {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .75rem;
+  }
+  @media (min-width: 1024px) {
+    .bento { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .bento-wide { grid-column: span 2; }
+    .bento-tall { grid-row: span 2; }
+  }
 
   .no-scrollbar::-webkit-scrollbar { display: none; }
   .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

@@ -5,7 +5,9 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist'] },
+  // supabase/functions runs on Deno with its own globals and remote imports;
+  // extension/ is plain browser JS loaded unpacked, not part of the Vite build.
+  { ignores: ['dist', 'supabase/functions/**', 'extension/**'] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ['**/*.{ts,tsx}'],

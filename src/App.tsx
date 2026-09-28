@@ -14,9 +14,12 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
-import { onUi } from './lib/uiBus';
+import { emitDeferrable, onUi } from './lib/uiBus';
 import { useNotificationEngine } from './hooks/useAlerts';
 import { useAutomationEngine } from './hooks/useAutomations';
+import { useAutoLock } from './hooks/useAutoLock';
+import { consumeAddHash } from './lib/bookmarklet';
+import LockScreen from './components/LockScreen';
 
 // Secondary pages load on demand — the dashboard is the only route most sessions need.
 const Insights = lazy(() => import('./pages/Insights'));
@@ -24,6 +27,8 @@ const CalendarPage = lazy(() => import('./pages/CalendarPage'));
 const Workspace = lazy(() => import('./pages/Workspace'));
 const Settings = lazy(() => import('./pages/Settings'));
 const Automations = lazy(() => import('./pages/Automations'));
+const Prep = lazy(() => import('./pages/Prep'));
+const Shared = lazy(() => import('./pages/Shared'));
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: string }> {
   state = { hasError: false, error: '' };
@@ -75,7 +80,7 @@ function PublicOnlyRoute({ children }: { children: ReactNode }) {
 /** Bridges UI-bus navigation and theme events into router/theme state. */
 function UiBridge() {
   const navigate = useNavigate();
-  const { theme, toggleTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
   useNotificationEngine();
   useAutomationEngine();
 
@@ -83,12 +88,34 @@ function UiBridge() {
     () =>
       onUi(e => {
         if (e.type === 'navigate') navigate(e.to);
-        else if (e.type === 'set-theme' && e.theme !== theme) toggleTheme();
+        else if (e.type === 'set-theme' && e.theme !== theme) setTheme(e.theme);
       }),
-    [navigate, theme, toggleTheme],
+    [navigate, theme, setTheme],
   );
 
+  /**
+   * Handoff from the bookmarklet or the browser extension.
+   *
+   * They pass extracted fields in the URL hash — never sent to a server — and
+   * this turns it into the same prefilled new-application form the app uses
+   * everywhere else. `emitDeferrable` covers the case where the dashboard has
+   * not mounted yet.
+   */
+  useEffect(() => {
+    const prefill = consumeAddHash();
+    if (!prefill) return;
+    navigate('/dashboard');
+    emitDeferrable({ type: 'new-application', prefill });
+  }, [navigate]);
+
   return null;
+}
+
+/** Session auto-lock: re-prompts for the vault passphrase after idle time. */
+function IdleLock() {
+  const { locked, unlock } = useAutoLock();
+  if (!locked) return null;
+  return <LockScreen onUnlocked={unlock} />;
 }
 
 function AppShell() {
@@ -118,6 +145,8 @@ function AppShell() {
           }
         />
         <Route path="/reset-password" element={<ResetPassword />} />
+        {/* Public, read-only, no account needed. */}
+        <Route path="/shared/:token" element={<Shared />} />
         <Route
           path="/dashboard"
           element={
@@ -166,6 +195,14 @@ function AppShell() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/prep"
+          element={
+            <ProtectedRoute>
+              <Prep />
+            </ProtectedRoute>
+          }
+        />
         <Route path="*" element={<Navigate to={user ? '/dashboard' : '/'} replace />} />
       </Routes>
       </Suspense>
@@ -174,6 +211,7 @@ function AppShell() {
         <>
           <CommandPalette />
           <AssistantPanel />
+          <IdleLock />
         </>
       )}
       <Toaster />

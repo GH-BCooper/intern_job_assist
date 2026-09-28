@@ -14,6 +14,7 @@ import {
   TrendingUp,
   X,
   Zap,
+  Brain,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -26,6 +27,7 @@ const NAV = [
   { to: '/insights', label: 'Insights', icon: TrendingUp },
   { to: '/calendar', label: 'Calendar', icon: CalendarDays },
   { to: '/workspace', label: 'Workspace', icon: FolderKanban },
+  { to: '/prep', label: 'Prep', icon: Brain },
   { to: '/automations', label: 'Automations', icon: Zap },
 ];
 

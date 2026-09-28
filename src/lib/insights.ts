@@ -1,6 +1,6 @@
 import type { Application, InterviewDate } from './supabase';
-import type { StoreShape } from './store';
-import { DAY_MS, dayKey, daysSince, startOfWeek, toDateInput, ts } from './format';
+import type { StageChange, StoreShape } from './store';
+import { DAY_MS, dayKey, daysSince, parseDate, startOfMonth, startOfWeek, toDateInput, ts } from './format';
 
 export const STAGES = ['Wishlist', 'Applied', 'In Review', 'Interviewing', 'Offer', 'Closed'] as const;
 export type Stage = (typeof STAGES)[number];
@@ -388,4 +388,504 @@ export function buildSuggestions(
   });
 
   return out;
+}
+
+/* ============================ stage config ============================ */
+
+/**
+ * The user's stage list: the canonical six, reordered and relabelled to taste.
+ *
+ * Renaming is presentation only — every stored override, automation rule and
+ * analytic keeps using the canonical name, so a rename can never orphan data.
+ */
+export function orderedStages(prefs: { stageOrder?: string[] }): Stage[] {
+  const order = (prefs.stageOrder || []).filter((s): s is Stage => (STAGES as readonly string[]).includes(s));
+  const missing = STAGES.filter(s => !order.includes(s));
+  return order.length ? [...order, ...missing] : [...STAGES];
+}
+
+export function stageLabel(stage: string, prefs: { stageLabels?: Record<string, string> }): string {
+  return prefs.stageLabels?.[stage]?.trim() || stage;
+}
+
+/** Soft cap for a column; 0 means unlimited. */
+export function wipLimit(stage: string, prefs: { wipLimits?: Record<string, number> }): number {
+  const raw = prefs.wipLimits?.[stage];
+  return typeof raw === 'number' && raw > 0 ? Math.round(raw) : 0;
+}
+
+/* ====================== month & range comparisons ====================== */
+
+export type PeriodComparison = {
+  label: string;
+  current: number;
+  previous: number;
+  delta: number;
+  deltaPct: number | null;
+};
+
+function countInRange(applications: Application[], from: number, to: number): number {
+  return applications.filter(a => {
+    const t = ts(a.date_applied || a.created_at);
+    return t >= from && t < to;
+  }).length;
+}
+
+function compare(label: string, current: number, previous: number): PeriodComparison {
+  return {
+    label,
+    current,
+    previous,
+    delta: current - previous,
+    deltaPct: previous > 0 ? Math.round(((current - previous) / previous) * 100) : null,
+  };
+}
+
+/** Week / month / quarter comparisons, the same shape the headline stats already use. */
+export function periodComparisons(applications: Application[], at = new Date()): Record<'week' | 'month' | 'quarter', PeriodComparison> {
+  const weekStart = startOfWeek(at).getTime();
+  const lastWeekStart = weekStart - 7 * DAY_MS;
+
+  const monthStart = startOfMonth(at).getTime();
+  const lastMonthStart = startOfMonth(new Date(at.getFullYear(), at.getMonth() - 1, 1)).getTime();
+
+  const quarterMonth = Math.floor(at.getMonth() / 3) * 3;
+  const quarterStart = new Date(at.getFullYear(), quarterMonth, 1).getTime();
+  const lastQuarterStart = new Date(at.getFullYear(), quarterMonth - 3, 1).getTime();
+
+  return {
+    week: compare(
+      'This week',
+      countInRange(applications, weekStart, weekStart + 7 * DAY_MS),
+      countInRange(applications, lastWeekStart, weekStart),
+    ),
+    month: compare(
+      'This month',
+      countInRange(applications, monthStart, at.getTime() + DAY_MS),
+      countInRange(applications, lastMonthStart, monthStart),
+    ),
+    quarter: compare(
+      'This quarter',
+      countInRange(applications, quarterStart, at.getTime() + DAY_MS),
+      countInRange(applications, lastQuarterStart, quarterStart),
+    ),
+  };
+}
+
+/* ========================= stage-flow (Sankey) ========================= */
+
+export type FlowLink = { from: string; to: string; count: number; backward: boolean };
+
+export type StageFlow = {
+  links: FlowLink[];
+  /** Stage occupancy, for column heights. */
+  totals: Record<string, number>;
+  max: number;
+};
+
+/**
+ * How applications actually moved, built from the recorded stage history.
+ *
+ * Unlike the funnel (strictly linear) this shows backward moves —
+ * Interviewing → Closed is the most informative edge in the whole chart.
+ */
+export function stageFlow(history: StageChange[], byStage: Record<string, number>): StageFlow {
+  const map = new Map<string, FlowLink>();
+  const rank = (s: string) => STAGES.indexOf(s as Stage);
+
+  history.forEach(h => {
+    const from = h.from || 'Wishlist';
+    const to = h.to;
+    if (!to || from === to) return;
+    const key = `${from}→${to}`;
+    const existing = map.get(key);
+    if (existing) existing.count += 1;
+    else map.set(key, { from, to, count: 1, backward: rank(to) >= 0 && rank(from) >= 0 && rank(to) < rank(from) });
+  });
+
+  const links = [...map.values()].sort((a, b) => b.count - a.count);
+  return {
+    links,
+    totals: { ...byStage },
+    max: Math.max(1, ...links.map(l => l.count)),
+  };
+}
+
+/* ==================== day-of-week / time-of-day ==================== */
+
+export type DayPattern = {
+  day: string;
+  index: number;
+  applications: number;
+  interviews: number;
+  rate: number;
+  avgResponseDays: number | null;
+};
+
+export type TimingInsight = {
+  days: DayPattern[];
+  bestDays: string[];
+  worstDays: string[];
+  /** e.g. 2.3 — how many times better the best window converts. */
+  advantage: number | null;
+  headline: string;
+};
+
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/**
+ * Whether the day you apply correlates with hearing back.
+ *
+ * Deliberately conservative: with fewer than 10 dated applications there is no
+ * pattern to report, and the headline says so rather than inventing one.
+ */
+export function timingInsight(
+  applications: Application[],
+  interviewsMap: Record<string, InterviewDate[]>,
+): TimingInsight {
+  const buckets: { applications: number; interviews: number; gaps: number[] }[] = DAY_NAMES.map(() => ({
+    applications: 0,
+    interviews: 0,
+    gaps: [],
+  }));
+
+  let dated = 0;
+  applications.forEach(app => {
+    const applied = parseDate(app.date_applied);
+    if (!applied) return;
+    dated += 1;
+    const bucket = buckets[applied.getDay()];
+    bucket.applications += 1;
+    const rounds = interviewsMap[app.id] || [];
+    const gotInterview = app.interview_offered || rounds.length > 0;
+    if (gotInterview) bucket.interviews += 1;
+    const first = rounds.map(r => ts(r.interview_date)).filter(Boolean).sort((a, b) => a - b)[0];
+    if (first && first > applied.getTime()) bucket.gaps.push((first - applied.getTime()) / DAY_MS);
+  });
+
+  const days: DayPattern[] = buckets.map((b, index) => ({
+    day: DAY_NAMES[index],
+    index,
+    applications: b.applications,
+    interviews: b.interviews,
+    rate: b.applications ? Math.round((b.interviews / b.applications) * 1000) / 10 : 0,
+    avgResponseDays: b.gaps.length ? Math.round((b.gaps.reduce((s, x) => s + x, 0) / b.gaps.length) * 10) / 10 : null,
+  }));
+
+  const eligible = days.filter(d => d.applications >= 3);
+  if (dated < 10 || eligible.length < 2) {
+    return {
+      days,
+      bestDays: [],
+      worstDays: [],
+      advantage: null,
+      headline: `Not enough dated applications yet — ${dated} logged, and patterns need around ten.`,
+    };
+  }
+
+  const sorted = [...eligible].sort((a, b) => b.rate - a.rate);
+  const best = sorted[0];
+  const worst = sorted[sorted.length - 1];
+  const advantage = worst.rate > 0 ? Math.round((best.rate / worst.rate) * 10) / 10 : null;
+
+  const headline =
+    best.rate === 0
+      ? 'No day has converted yet — keep going and this will fill in.'
+      : advantage && advantage >= 1.5
+        ? `You hear back ${advantage}× more often when you apply on a ${best.day} than on a ${worst.day}.`
+        : `Your reply rate is fairly even across the week — ${best.day} leads at ${best.rate}%.`;
+
+  return {
+    days,
+    bestDays: sorted.slice(0, 2).map(d => d.day),
+    worstDays: sorted.slice(-2).map(d => d.day),
+    advantage,
+    headline,
+  };
+}
+
+/* ======================== offer projection ======================== */
+
+export type Projection = {
+  /** Applications still needed for one expected offer. */
+  applicationsToOffer: number | null;
+  /** Weeks at the current cadence. */
+  weeksToOffer: number | null;
+  interviewRate: number;
+  interviewToOfferRate: number;
+  perWeek: number;
+  confident: boolean;
+  headline: string;
+};
+
+/**
+ * A transparent expected-value projection, not a model.
+ *
+ * P(offer per application) = P(interview | applied) × P(offer | interview).
+ * Both come straight from the user's own counts, and the text says so.
+ */
+export function offerProjection(a: Analytics): Projection {
+  const interviewRate = a.applied ? a.interviews / a.applied : 0;
+  const interviewToOffer = a.interviews ? a.offers / a.interviews : 0;
+  // With no offers yet, fall back to a widely-cited ~25% interview→offer rate,
+  // and flag the projection as unconfident so the UI can say why.
+  const assumedConversion = interviewToOffer || 0.25;
+  const perApplication = interviewRate * assumedConversion;
+  const recentWeeks = a.byWeek.slice(-4);
+  const perWeek = recentWeeks.length ? recentWeeks.reduce((s, w) => s + w.count, 0) / recentWeeks.length : 0;
+  const confident = a.applied >= 10 && a.interviews >= 2;
+
+  if (!perApplication) {
+    return {
+      applicationsToOffer: null,
+      weeksToOffer: null,
+      interviewRate: Math.round(interviewRate * 1000) / 10,
+      interviewToOfferRate: Math.round(assumedConversion * 1000) / 10,
+      perWeek: Math.round(perWeek * 10) / 10,
+      confident: false,
+      headline:
+        a.applied < 5
+          ? 'A projection needs a handful of applications first — log five and this fills in.'
+          : 'No interviews yet, so there is no conversion rate to project from. The resume is the lever here.',
+    };
+  }
+
+  const needed = Math.ceil(1 / perApplication);
+  const weeks = perWeek > 0 ? Math.ceil(needed / perWeek) : null;
+
+  return {
+    applicationsToOffer: needed,
+    weeksToOffer: weeks,
+    interviewRate: Math.round(interviewRate * 1000) / 10,
+    interviewToOfferRate: Math.round(assumedConversion * 1000) / 10,
+    perWeek: Math.round(perWeek * 10) / 10,
+    confident,
+    headline:
+      `At your ${Math.round(interviewRate * 100)}% interview rate and ` +
+      `${Math.round(assumedConversion * 100)}% interview-to-offer rate, about ${needed} more applications ` +
+      `gets you to one expected offer${weeks ? ` — roughly ${weeks} week${weeks === 1 ? '' : 's'} at your current pace` : ''}.` +
+      (confident ? '' : ' Treat this as a rough sketch until you have more data.'),
+  };
+}
+
+/* ====================== momentum breakdown ====================== */
+
+export type MomentumPart = { label: string; detail: string; points: number; max: number };
+
+/**
+ * Why the momentum score is what it is.
+ *
+ * Mirrors the weighting inside computeAnalytics exactly — if that formula
+ * changes, this must change with it, which is why both live in this file.
+ */
+export function momentumBreakdown(a: Analytics): { parts: MomentumPart[]; total: number } {
+  const pct = (part: number, whole: number) => (whole ? (part / whole) * 100 : 0);
+  const applied = Math.max(a.applied, 1);
+
+  const parts: MomentumPart[] = [
+    {
+      label: 'Interview conversion',
+      detail: `${a.interviews} of ${a.applied} applications reached an interview`,
+      points: Math.round(pct(a.interviews, applied) * 0.35),
+      max: 35,
+    },
+    {
+      label: 'Responses',
+      detail: `${a.responded} of ${a.applied} got any response at all`,
+      points: Math.round(pct(a.responded, applied) * 0.2),
+      max: 20,
+    },
+    {
+      label: 'This week’s cadence',
+      detail: `${a.thisWeek} logged this week`,
+      points: Math.min(a.thisWeek, 10) * 3,
+      max: 30,
+    },
+    {
+      label: 'Streak',
+      detail: `${a.streak} consecutive day${a.streak === 1 ? '' : 's'}`,
+      points: Math.min(a.streak, 7) * 2,
+      max: 14,
+    },
+    {
+      label: 'Follow-up debt',
+      detail: a.stale.length ? `${a.stale.length} application${a.stale.length === 1 ? '' : 's'} gone quiet` : 'Nothing overdue',
+      points: a.stale.length ? -Math.min(a.stale.length * 3, 15) : 5,
+      max: 5,
+    },
+  ];
+
+  return { parts, total: a.momentum };
+}
+
+/* ========================== weekly wrapped ========================== */
+
+export type Wrapped = {
+  from: string;
+  to: string;
+  applications: number;
+  interviews: number;
+  offers: number;
+  responses: number;
+  bestPlatform: { platform: string; rate: number } | null;
+  streak: number;
+  momentum: number;
+  topRole: string | null;
+  headline: string;
+  /** vs the week before */
+  delta: number;
+};
+
+/** The shareable week in review — data only; the card renders it. */
+export function weeklyWrapped(
+  applications: Application[],
+  interviewsMap: Record<string, InterviewDate[]>,
+  a: Analytics,
+  at = new Date(),
+): Wrapped {
+  const start = startOfWeek(at);
+  const end = new Date(start.getTime() + 7 * DAY_MS);
+  const prevStart = new Date(start.getTime() - 7 * DAY_MS);
+
+  const inWeek = applications.filter(app => {
+    const t = ts(app.date_applied || app.created_at);
+    return t >= start.getTime() && t < end.getTime();
+  });
+  const lastWeekCount = countInRange(applications, prevStart.getTime(), start.getTime());
+
+  let interviews = 0;
+  applications.forEach(app => {
+    (interviewsMap[app.id] || []).forEach(iv => {
+      const t = ts(iv.interview_date);
+      if (t >= start.getTime() && t < end.getTime()) interviews += 1;
+    });
+  });
+
+  const offers = inWeek.filter(app => app.response_status === 'Offered' || app.final_status === 'Accepted').length;
+  const responses = inWeek.filter(app => app.response_status && app.response_status !== 'Pending').length;
+  const best = a.byPlatform.filter(p => p.total >= 2).sort((x, y) => y.rate - x.rate)[0];
+
+  const roleCount = new Map<string, number>();
+  inWeek.forEach(app => {
+    const role = (app.role_applied_to || '').trim();
+    if (role) roleCount.set(role, (roleCount.get(role) || 0) + 1);
+  });
+  const topRole = [...roleCount.entries()].sort((x, y) => y[1] - x[1])[0]?.[0] || null;
+
+  const delta = inWeek.length - lastWeekCount;
+  const headline =
+    offers > 0
+      ? 'You got an offer this week.'
+      : interviews > 0
+        ? `${interviews} interview${interviews === 1 ? '' : 's'} this week.`
+        : inWeek.length === 0
+          ? 'A quiet week — nothing logged.'
+          : delta > 0
+            ? `${inWeek.length} applications out, up ${delta} on last week.`
+            : `${inWeek.length} applications out this week.`;
+
+  return {
+    from: dayKey(start),
+    to: dayKey(new Date(end.getTime() - DAY_MS)),
+    applications: inWeek.length,
+    interviews,
+    offers,
+    responses,
+    bestPlatform: best ? { platform: best.platform, rate: best.rate } : null,
+    streak: a.streak,
+    momentum: a.momentum,
+    topRole,
+    headline,
+    delta,
+  };
+}
+
+/* ====================== "now" — the single next thing ====================== */
+
+export type NowItem = {
+  kind: 'interview' | 'stale' | 'task' | 'reminder' | 'cadence' | 'offer' | 'calm';
+  text: string;
+  detail: string;
+  applicationId?: string;
+  urgency: number;
+};
+
+/**
+ * The one thing that matters most right now, for the persistent status strip.
+ *
+ * Ranked by urgency so the strip never needs a scroll: an interview tomorrow
+ * outranks three quiet applications, which outrank a cadence nudge.
+ */
+export function nowItems(
+  a: Analytics,
+  store: Pick<StoreShape, 'tasks' | 'reminders'>,
+  at = Date.now(),
+): NowItem[] {
+  const out: NowItem[] = [];
+
+  a.upcomingInterviews.forEach(({ app, interview }) => {
+    const days = Math.ceil((ts(interview.interview_date) - at) / DAY_MS);
+    if (days < 0 || days > 14) return;
+    out.push({
+      kind: 'interview',
+      text: days <= 0 ? `Interview with ${app.company_name} today` : `Interview with ${app.company_name} in ${days} day${days === 1 ? '' : 's'}`,
+      detail: interview.label || 'Interview',
+      applicationId: app.id,
+      urgency: 1000 - days * 10,
+    });
+  });
+
+  if (a.byStage.Offer > 0) {
+    out.push({
+      kind: 'offer',
+      text: `${a.byStage.Offer} offer${a.byStage.Offer === 1 ? '' : 's'} on the table`,
+      detail: 'Compare them before you answer',
+      urgency: 900,
+    });
+  }
+
+  const overdueTasks = store.tasks.filter(t => !t.done && t.due_at && ts(t.due_at) <= at);
+  if (overdueTasks.length) {
+    out.push({
+      kind: 'task',
+      text: `${overdueTasks.length} overdue task${overdueTasks.length === 1 ? '' : 's'}`,
+      detail: overdueTasks[0].title,
+      urgency: 700,
+    });
+  }
+
+  const dueReminders = store.reminders.filter(r => !r.done && ts(r.due_at) <= at);
+  if (dueReminders.length) {
+    out.push({
+      kind: 'reminder',
+      text: `${dueReminders.length} reminder${dueReminders.length === 1 ? '' : 's'} due`,
+      detail: dueReminders[0].title,
+      urgency: 650,
+    });
+  }
+
+  if (a.stale.length) {
+    out.push({
+      kind: 'stale',
+      text: `${a.stale.length} application${a.stale.length === 1 ? '' : 's'} gone quiet`,
+      detail: `Longest wait: ${a.stale[0].app.company_name}, ${a.stale[0].days} days`,
+      applicationId: a.stale[0].app.id,
+      urgency: 500,
+    });
+  }
+
+  if (a.thisWeek === 0 && a.total > 0) {
+    out.push({ kind: 'cadence', text: 'Nothing logged this week', detail: 'Momentum compounds — add two', urgency: 300 });
+  }
+
+  if (!out.length) {
+    out.push({
+      kind: 'calm',
+      text: a.total ? 'Pipeline is clean' : 'Add your first application',
+      detail: a.total ? `${a.active} active, nothing overdue` : 'Or ask Scout to add it for you',
+      urgency: 0,
+    });
+  }
+
+  return out.sort((x, y) => y.urgency - x.urgency);
 }

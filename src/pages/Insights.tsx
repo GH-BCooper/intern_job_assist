@@ -1,26 +1,47 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
+  CalendarRange,
   CheckCircle2,
   Flame,
+  ImageDown,
   Info,
   Loader2,
+  Medal,
   Plus,
+  Route,
   Sparkles,
   Target,
   TrendingDown,
   TrendingUp,
+  Trophy,
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useAI } from '../context/AIContext';
 import { useStore } from '../hooks/useStore';
-import { buildSuggestions, computeAnalytics } from '../lib/insights';
+import {
+  buildSuggestions,
+  computeAnalytics,
+  momentumBreakdown,
+  offerProjection,
+  periodComparisons,
+  stageFlow,
+  timingInsight,
+  weeklyWrapped,
+} from '../lib/insights';
+import Sankey from '../components/ui/Sankey';
+import BadgeShelf from '../components/ui/BadgeShelf';
+import WrappedCard from '../components/WrappedCard';
+import EmptyState from '../components/ui/EmptyArt';
+import { computeBadges } from '../lib/badges';
+import { earnBadges } from '../lib/store';
 import { BarChart, Donut, Funnel, Gauge, Heatmap, ProgressRing, SERIES, Sparkline } from '../components/ui/Charts';
 import Markdown from '../components/ui/Markdown';
 import PageShell from '../components/PageShell';
 import { emitUi, toast } from '../lib/uiBus';
 import { setGoal } from '../lib/store';
+import { celebrate } from '../lib/fx';
 import { startOfMonth, startOfWeek, ts } from '../lib/format';
 
 const GOAL_LABEL: Record<string, string> = {
@@ -76,6 +97,68 @@ export default function Insights() {
     () => computeAnalytics(applications, interviewsMap, store, store.preferences.followUpDays),
     [applications, interviewsMap, store],
   );
+  const comparisons = useMemo(() => periodComparisons(applications), [applications]);
+  const [period, setPeriod] = useState<'week' | 'month' | 'quarter'>('week');
+  const flow = useMemo(() => stageFlow(store.stageHistory, a.byStage), [store.stageHistory, a.byStage]);
+  const timing = useMemo(() => timingInsight(applications, interviewsMap), [applications, interviewsMap]);
+  const projection = useMemo(() => offerProjection(a), [a]);
+  const momentumParts = useMemo(() => momentumBreakdown(a), [a]);
+  const badges = useMemo(() => computeBadges(a, store), [a, store]);
+  const wrapped = useMemo(() => weeklyWrapped(applications, interviewsMap, a), [applications, interviewsMap, a]);
+  const [showWrapped, setShowWrapped] = useState(false);
+  const [snapshotBusy, setSnapshotBusy] = useState(false);
+  const snapshotRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Awards any newly-earned achievements.
+   *
+   * Runs during render-derived memo rather than an effect because `earnBadges`
+   * is idempotent and returns only the genuinely new ids — so the celebration
+   * fires once per unlock, not once per render.
+   */
+  const newlyEarned = useMemo(() => {
+    const fresh = earnBadges(badges.filter(b => b.earned).map(b => b.id));
+    if (fresh.length) celebrate();
+    return fresh;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [badges.map(b => `${b.id}:${b.earned}`).join('|')]);
+
+  /** Renders the headline block to a PNG for sharing. */
+  const shareSnapshot = async () => {
+    const node = snapshotRef.current;
+    if (!node) return;
+    setSnapshotBusy(true);
+    try {
+      const { default: html2canvas } = await import('html2canvas');
+      const canvas = await html2canvas(node, {
+        backgroundColor: document.documentElement.classList.contains('dark') ? '#1B170E' : '#FEF7EC',
+        scale: 2,
+        logging: false,
+      });
+      const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(b => resolve(b), 'image/png'));
+      if (!blob) throw new Error('Could not render the snapshot.');
+      const file = new File([blob], 'interntrack-insights.png', { type: 'image/png' });
+      const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
+      if (nav.share && nav.canShare?.({ files: [file] })) {
+        await nav.share({ files: [file], title: 'My search so far' });
+      } else {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'interntrack-insights.png';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        toast('Snapshot saved as a PNG.', 'success');
+      }
+    } catch (e) {
+      if (e instanceof Error && e.name !== 'AbortError') toast(e.message, 'error');
+    } finally {
+      setSnapshotBusy(false);
+    }
+  };
+
   const suggestions = useMemo(
     () => buildSuggestions(applications, interviewsMap, a, store),
     [applications, interviewsMap, a, store],
@@ -153,10 +236,19 @@ export default function Insights() {
       title="Insights"
       subtitle="Every number in your search, and what to do about it."
       actions={
-        <button onClick={generateBriefing} disabled={briefingBusy} className="btn-primary">
-          {briefingBusy ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
-          Weekly briefing
-        </button>
+        <>
+          <button onClick={() => setShowWrapped(true)} className="btn-secondary">
+            <Trophy size={14} /> Week in review
+          </button>
+          <button onClick={() => void shareSnapshot()} disabled={snapshotBusy} className="btn-secondary">
+            {snapshotBusy ? <Loader2 size={14} className="animate-spin" /> : <ImageDown size={14} />}
+            <span className="hidden sm:inline">Share snapshot</span>
+          </button>
+          <button onClick={generateBriefing} disabled={briefingBusy} className="btn-primary">
+            {briefingBusy ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
+            Weekly briefing
+          </button>
+        </>
       }
     >
       {briefing && (
@@ -172,13 +264,57 @@ export default function Insights() {
         </div>
       )}
 
+      {newlyEarned.length > 0 && (
+        <div className="card p-4 mb-4 border-primary-300 dark:border-primary-900 bg-gradient-to-br from-primary-50/80 to-accent-50/40 dark:from-primary-950/30 dark:to-accent-950/20 animate-slide-up">
+          <p className="text-sm font-semibold text-light-900 dark:text-white flex items-center gap-2">
+            <Medal size={15} className="text-primary-500" />
+            {newlyEarned.length === 1 ? 'Achievement unlocked' : `${newlyEarned.length} achievements unlocked`}
+          </p>
+          <p className="text-xs text-light-600 dark:text-dark-300 mt-1">
+            {badges
+              .filter(b => newlyEarned.includes(b.id))
+              .map(b => b.name)
+              .join(' · ')}
+          </p>
+        </div>
+      )}
+
+      {/* period comparison */}
+      <div className="flex items-center gap-1.5 mb-3">
+        <CalendarRange size={13} className="text-light-500 dark:text-dark-400" />
+        <div className="flex gap-1 p-1 rounded-xl bg-light-200/80 dark:bg-dark-900 border border-light-300 dark:border-dark-800">
+          {(['week', 'month', 'quarter'] as const).map(p => (
+            <button
+              key={p}
+              onClick={() => setPeriod(p)}
+              className={`tab !py-1 !px-2.5 !text-[11px] ${period === p ? 'tab-active' : ''}`}
+            >
+              {p === 'week' ? 'Week' : p === 'month' ? 'Month' : 'Quarter'}
+            </button>
+          ))}
+        </div>
+        <p className="text-[11px] text-light-600 dark:text-dark-300 ml-1">
+          {comparisons[period].current} this {period} vs {comparisons[period].previous} last{' '}
+          {comparisons[period].deltaPct !== null && (
+            <span
+              className={`font-semibold ${
+                comparisons[period].delta >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
+              }`}
+            >
+              ({comparisons[period].delta >= 0 ? '+' : ''}
+              {comparisons[period].deltaPct}%)
+            </span>
+          )}
+        </p>
+      </div>
+
       {/* headline stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+      <div ref={snapshotRef} className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4 p-1 rounded-2xl">
         <StatTile
           label="Applications"
           value={a.total}
           sub={`${a.active} still active`}
-          trend={a.thisWeek - a.lastWeek}
+          trend={comparisons[period].delta}
           spark={a.byWeek.map(w => w.count)}
         />
         <StatTile label="Response rate" value={`${a.responseRate}%`} sub={`${a.responded} of ${a.applied} replied`} />
@@ -342,6 +478,141 @@ export default function Insights() {
         </div>
       </div>
 
+      {/* momentum breakdown */}
+      <div className="grid lg:grid-cols-2 gap-4 mb-4">
+        <div className="card p-5">
+          <h2 className="text-sm font-semibold text-light-900 dark:text-white mb-1">Why your momentum is {a.momentum}</h2>
+          <p className="text-[11px] text-light-500 dark:text-dark-400 mb-3">
+            The four inputs the score blends, so it reads as coaching rather than a mystery number.
+          </p>
+          <div className="space-y-2.5">
+            {momentumParts.parts.map(part => {
+              const negative = part.points < 0;
+              const width = Math.min(100, Math.abs(part.points) / Math.max(1, part.max) * 100);
+              return (
+                <div key={part.label}>
+                  <div className="flex items-baseline justify-between gap-2 text-xs mb-1">
+                    <span className="font-medium text-light-700 dark:text-dark-200">{part.label}</span>
+                    <span
+                      className={`tabular-nums font-semibold ${
+                        negative ? 'text-red-600 dark:text-red-400' : 'text-light-900 dark:text-white'
+                      }`}
+                    >
+                      {part.points > 0 ? '+' : ''}
+                      {part.points}
+                    </span>
+                  </div>
+                  <div className="h-2 rounded-full bg-light-300/70 dark:bg-dark-800 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${negative ? 'bg-red-400' : 'bg-gradient-to-r from-primary-500 to-accent-400'}`}
+                      style={{ width: `${Math.max(width, 2)}%` }}
+                    />
+                  </div>
+                  <p className="text-[10.5px] text-light-500 dark:text-dark-400 mt-0.5">{part.detail}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="card p-5">
+          <h2 className="text-sm font-semibold text-light-900 dark:text-white mb-1">How far to an offer</h2>
+          <p className="text-[11px] text-light-500 dark:text-dark-400 mb-3">
+            Expected value from your own conversion rates. Transparent arithmetic, not a prediction.
+          </p>
+          {projection.applicationsToOffer ? (
+            <>
+              <div className="flex items-end gap-5 mb-3">
+                <div>
+                  <p className="text-3xl font-bold tabular-nums text-light-900 dark:text-white leading-none">
+                    {projection.applicationsToOffer}
+                  </p>
+                  <p className="text-[11px] text-light-500 dark:text-dark-400 mt-1">more applications</p>
+                </div>
+                {projection.weeksToOffer && (
+                  <div>
+                    <p className="text-3xl font-bold tabular-nums text-primary-600 dark:text-primary-400 leading-none">
+                      {projection.weeksToOffer}
+                    </p>
+                    <p className="text-[11px] text-light-500 dark:text-dark-400 mt-1">weeks at this pace</p>
+                  </div>
+                )}
+              </div>
+              <p className="text-xs text-light-700 dark:text-dark-200 leading-relaxed">{projection.headline}</p>
+            </>
+          ) : (
+            <p className="text-xs text-light-700 dark:text-dark-200 leading-relaxed">{projection.headline}</p>
+          )}
+          <div className="mt-3 pt-3 border-t border-light-300 dark:border-dark-800 grid grid-cols-3 gap-2 text-center">
+            <div>
+              <p className="text-sm font-bold tabular-nums text-light-900 dark:text-white">{projection.interviewRate}%</p>
+              <p className="text-[10px] text-light-500 dark:text-dark-400">applied → interview</p>
+            </div>
+            <div>
+              <p className="text-sm font-bold tabular-nums text-light-900 dark:text-white">{projection.interviewToOfferRate}%</p>
+              <p className="text-[10px] text-light-500 dark:text-dark-400">interview → offer</p>
+            </div>
+            <div>
+              <p className="text-sm font-bold tabular-nums text-light-900 dark:text-white">{projection.perWeek}</p>
+              <p className="text-[10px] text-light-500 dark:text-dark-400">per week now</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* stage flow + timing */}
+      <div className="grid lg:grid-cols-2 gap-4 mb-4">
+        <div className="card p-5">
+          <h2 className="text-sm font-semibold text-light-900 dark:text-white mb-1 flex items-center gap-2">
+            <Route size={14} className="text-primary-500" /> How applications actually moved
+          </h2>
+          <p className="text-[11px] text-light-500 dark:text-dark-400 mb-3">
+            Every recorded stage transition, including the backward ones the funnel cannot show.
+          </p>
+          <Sankey flow={flow} />
+        </div>
+
+        <div className="card p-5">
+          <h2 className="text-sm font-semibold text-light-900 dark:text-white mb-1">When you apply matters</h2>
+          <p className="text-xs text-light-700 dark:text-dark-200 leading-relaxed mb-3">{timing.headline}</p>
+          <div className="space-y-1.5">
+            {timing.days
+              .filter(d => d.applications > 0)
+              .map(d => {
+                const max = Math.max(1, ...timing.days.map(x => x.rate));
+                return (
+                  <div key={d.day} className="flex items-center gap-2 text-xs">
+                    <span className="w-16 text-light-600 dark:text-dark-300 flex-shrink-0">{d.day.slice(0, 3)}</span>
+                    <div className="flex-1 h-2.5 rounded-full bg-light-300/70 dark:bg-dark-800 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-primary-500 to-accent-400"
+                        style={{ width: `${Math.max((d.rate / max) * 100, d.rate ? 3 : 0)}%` }}
+                      />
+                    </div>
+                    <span className="w-24 text-right text-light-500 dark:text-dark-400 tabular-nums flex-shrink-0">
+                      {d.rate}% of {d.applications}
+                    </span>
+                  </div>
+                );
+              })}
+          </div>
+          {timing.days.every(d => d.applications === 0) && (
+            <EmptyState art="chart" title="No dated applications yet" hint="Add a date applied and the pattern appears here." />
+          )}
+        </div>
+      </div>
+
+      {/* achievements */}
+      <div className="card p-5 mb-4">
+        <h2 className="text-sm font-semibold text-light-900 dark:text-white mb-1 flex items-center gap-2">
+          <Medal size={14} className="text-primary-500" /> Achievements
+        </h2>
+        <p className="text-[11px] text-light-500 dark:text-dark-400 mb-3">
+          Computed from your existing records, so importing history unlocks them retroactively.
+        </p>
+        <BadgeShelf badges={badges} />
+      </div>
+
       {/* coaching */}
       <div className="card p-5">
         <div className="flex items-center justify-between mb-3">
@@ -389,6 +660,7 @@ export default function Insights() {
           </ul>
         )}
       </div>
+      {showWrapped && <WrappedCard data={wrapped} onClose={() => setShowWrapped(false)} />}
     </PageShell>
   );
 }

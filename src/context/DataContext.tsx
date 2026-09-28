@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   supabase,
@@ -14,7 +14,8 @@ import {
 import { useAuth } from './AuthContext';
 import { logActivity, setStoreScope, uid } from '../lib/store';
 import { ts } from '../lib/format';
-import { onUi } from '../lib/uiBus';
+import { onUi, toast } from '../lib/uiBus';
+import { enqueue, flush, registerRunner } from '../lib/outbox';
 
 type DataContextType = {
   applications: Application[];
@@ -95,6 +96,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  /** Current applications, for callbacks that must not re-create on every change. */
+  const applicationsRef = useRef<Application[]>([]);
+  applicationsRef.current = applications;
+
   useEffect(() => {
     setStoreScope(user?.id);
   }, [user?.id]);
@@ -163,6 +168,63 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (e.type === 'refresh') void refresh();
   }), [refresh]);
 
+  /**
+   * Teaches the outbox how to replay each kind of queued write.
+   *
+   * Registered from the payload rather than a closure, so a write queued in a
+   * previous session still replays after a reload.
+   */
+  useEffect(() => {
+    registerRunner('create', async item => {
+      const row = item.payload.row as Record<string, unknown>;
+      const { error } = await supabase.from('applications').insert([row]);
+      // A replayed insert can collide with itself if the tab crashed mid-flush.
+      if (error && !/duplicate key|already exists/i.test(error.message)) throw new Error(error.message);
+    });
+    registerRunner('update', async item => {
+      const { error } = await supabase
+        .from('applications')
+        .update(item.payload.body as Record<string, unknown>)
+        .eq('id', item.payload.id as string);
+      if (error) throw new Error(error.message);
+    });
+    registerRunner('delete', async item => {
+      const { error } = await supabase.from('applications').delete().eq('id', item.payload.id as string);
+      if (error) throw new Error(error.message);
+    });
+    registerRunner('interview_add', async item => {
+      const { error } = await supabase.from('interview_dates').insert(item.payload.row as Record<string, unknown>);
+      if (error && !/duplicate key/i.test(error.message)) throw new Error(error.message);
+    });
+    registerRunner('interview_remove', async item => {
+      const { error } = await supabase.from('interview_dates').delete().eq('id', item.payload.id as string);
+      if (error) throw new Error(error.message);
+    });
+  }, []);
+
+  /** Flushes the queue on reconnect and once at startup. */
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+
+    const drain = async () => {
+      const { sent, failed } = await flush();
+      if (cancelled || (!sent && !failed)) return;
+      if (sent) {
+        toast(`Synced ${sent} change${sent === 1 ? '' : 's'} made offline.`, 'success');
+        void refresh();
+      }
+      if (failed) toast(`${failed} queued change${failed === 1 ? '' : 's'} could not be synced.`, 'error');
+    };
+
+    void drain();
+    window.addEventListener('online', drain);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('online', drain);
+    };
+  }, [user, refresh]);
+
   const createApplication = useCallback<DataContextType['createApplication']>(
     async (data, interviews = [], learnings, files) => {
       if (!user) throw new Error('You must be signed in.');
@@ -181,13 +243,29 @@ export function DataProvider({ children }: { children: ReactNode }) {
         cover_letter_path = p;
       }
 
-      const { data: created, error: err } = await supabase
-        .from('applications')
-        .insert([{ ...data, id: applicationId, user_id: user.id, resume_path, cover_letter_path }])
-        .select()
-        .single();
-      if (err) throw new Error(err.message);
+      const row = { ...data, id: applicationId, user_id: user.id, resume_path, cover_letter_path };
 
+      const insert = await enqueue('create', `Add ${data.company_name}`, { row }, async () => {
+        const { data: created, error: err } = await supabase.from('applications').insert([row]).select().single();
+        if (err) throw new Error(err.message);
+        return created;
+      });
+
+      if (!insert.ok) {
+        if (!insert.queued) throw insert.error instanceof Error ? insert.error : new Error(String(insert.error));
+        // Offline: show the record immediately and let the outbox land it later.
+        const optimistic = {
+          ...row,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        } as Application;
+        setApplications(prev => sortByRecency([optimistic, ...prev]));
+        logActivity(`Added ${optimistic.company_name} (queued offline)`, { kind: 'create', application_id: optimistic.id });
+        toast('Saved locally — it will sync when you are back online.', 'info');
+        return optimistic;
+      }
+
+      const created = insert.value;
       setApplications(prev => sortByRecency([created, ...prev]));
       logActivity(`Added ${created.company_name}`, { kind: 'create', application_id: created.id });
 
@@ -229,14 +307,37 @@ export function DataProvider({ children }: { children: ReactNode }) {
         patch.cover_letter_path = p;
       }
 
-      const { data: updated, error: err } = await supabase
-        .from('applications')
-        .update({ ...patch, updated_at: new Date().toISOString() })
-        .eq('id', id)
-        .select()
-        .single();
-      if (err) throw new Error(err.message);
+      const body = { ...patch, updated_at: new Date().toISOString() };
 
+      const result = await enqueue('update', `Update ${patch.company_name || 'an application'}`, { id, body }, async () => {
+        const { data: updated, error: err } = await supabase
+          .from('applications')
+          .update(body)
+          .eq('id', id)
+          .select()
+          .single();
+        if (err) throw new Error(err.message);
+        return updated;
+      });
+
+      if (!result.ok) {
+        if (!result.queued) throw result.error instanceof Error ? result.error : new Error(String(result.error));
+        // Offline: apply the patch locally so the UI stays truthful about intent.
+        let optimistic: Application | null = null;
+        setApplications(prev =>
+          prev.map(a => {
+            if (a.id !== id) return a;
+            optimistic = { ...a, ...body } as Application;
+            return optimistic;
+          }),
+        );
+        toast('Change saved locally — it will sync when you are back online.', 'info');
+        const existing = optimistic || applicationsRef.current.find(a => a.id === id);
+        if (!existing) throw new Error('That application is not loaded.');
+        return existing;
+      }
+
+      const updated = result.value;
       setApplications(prev => prev.map(a => (a.id === id ? updated : a)));
       logActivity(`Updated ${updated.company_name}`, { kind: 'update', application_id: id });
 
@@ -293,10 +394,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const deleteApplication = useCallback(async (id: string) => {
     const target = applications.find(a => a.id === id);
-    const { error: err } = await supabase.from('applications').delete().eq('id', id);
-    if (err) throw new Error(err.message);
+    const result = await enqueue('delete', `Delete ${target?.company_name || 'an application'}`, { id }, async () => {
+      const { error: err } = await supabase.from('applications').delete().eq('id', id);
+      if (err) throw new Error(err.message);
+      return true;
+    });
+    if (!result.ok && !result.queued) {
+      throw result.error instanceof Error ? result.error : new Error(String(result.error));
+    }
     setApplications(prev => prev.filter(a => a.id !== id));
     logActivity(`Deleted ${target?.company_name || 'an application'}`, { kind: 'delete' });
+    if (!result.ok) toast('Deletion queued — it will sync when you are back online.', 'info');
   }, [applications]);
 
   const addInterviewDate = useCallback(
