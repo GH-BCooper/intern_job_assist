@@ -44,16 +44,34 @@ export function icsEscape(value: string): string {
     .replace(/\r?\n/g, '\\n');
 }
 
-/** Folds a content line at 75 octets, as the spec requires for long summaries. */
+/**
+ * Folds a content line at 75 octets, as the spec requires for long summaries.
+ *
+ * The limit is in bytes, not characters, and a fold must never fall inside a
+ * multi-byte character: a title with an emoji or an accent could otherwise be
+ * cut in half and arrive as a replacement glyph in the calendar.
+ */
 export function fold(line: string): string {
-  if (line.length <= 75) return line;
-  const parts: string[] = [line.slice(0, 75)];
-  let rest = line.slice(75);
-  while (rest.length > 74) {
-    parts.push(` ${rest.slice(0, 74)}`);
-    rest = rest.slice(74);
+  const encoder = new TextEncoder();
+  if (encoder.encode(line).length <= 75) return line;
+
+  const parts: string[] = [];
+  let current = '';
+  let bytes = 0;
+  let limit = 75;
+  // `for…of` walks code points, so a surrogate pair is never split.
+  for (const ch of line) {
+    const size = encoder.encode(ch).length;
+    if (bytes + size > limit) {
+      parts.push(parts.length ? ` ${current}` : current);
+      current = '';
+      bytes = 0;
+      limit = 74; // continuation lines start with one space
+    }
+    current += ch;
+    bytes += size;
   }
-  if (rest) parts.push(` ${rest}`);
+  parts.push(parts.length ? ` ${current}` : current);
   return parts.join('\r\n');
 }
 

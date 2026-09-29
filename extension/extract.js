@@ -67,6 +67,5 @@
     ...base,
     platform_applied_on: location.hostname.replace(/^www\./, ''),
     source_url: location.href,
-    page_text: (document.body?.innerText || '').slice(0, 8000),
   };
 })();

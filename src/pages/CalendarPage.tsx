@@ -105,7 +105,14 @@ export default function CalendarPage() {
 
   const addQuick = () => {
     if (!quickTitle.trim()) return;
-    const iso = new Date(quickWhen).toISOString();
+    // Clearing the date field leaves an empty string, and `toISOString` on that
+    // throws — silently, from an event handler.
+    const when = new Date(quickWhen);
+    if (!quickWhen || Number.isNaN(when.getTime())) {
+      toast('Pick a date and time for the reminder.', 'error');
+      return;
+    }
+    const iso = when.toISOString();
     addReminder({ title: quickTitle.trim(), due_at: iso, kind: 'custom' });
     setQuickTitle('');
     toast('Reminder added to your calendar.', 'success');

@@ -30,7 +30,14 @@ export default function OtpInput({
       onChange(next);
       return;
     }
-    const chars = clean.split('');
+    let chars = clean.split('');
+    // Typing over a filled cell arrives as two characters (the old digit plus the
+    // new one). That is a replacement, not an insertion — inserting shifted every
+    // later digit along by one.
+    if (chars.length === 2 && digits[i]) {
+      const fresh = chars[0] === digits[i] ? chars[1] : chars[0];
+      chars = [fresh];
+    }
     const next = (value.slice(0, i) + chars.join('') + value.slice(i + 1)).slice(0, LENGTH);
     onChange(next);
     const landing = Math.min(i + chars.length, LENGTH - 1);

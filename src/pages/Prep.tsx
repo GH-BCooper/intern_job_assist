@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Brain,
   Check,
@@ -127,7 +127,17 @@ function DrillTab() {
   const [revealed, setRevealed] = useState(false);
   const [done, setDone] = useState(0);
 
-  const queue = useMemo(() => dueQueue(store.srsCards), [store.srsCards]);
+  // Whether a card is due depends on the clock, not only on the cards, so the
+  // queue is re-read every half minute. Without it "Later" (ten minutes) and the
+  // short learning steps never came back on their own — the page kept saying
+  // "nothing due" until something else happened to re-render it.
+  const [clock, setClock] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setClock(n => n + 1), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const queue = useMemo(() => dueQueue(store.srsCards), [store.srsCards, clock]);
   const card = queue[0];
 
   const grade = (value: Grade) => {

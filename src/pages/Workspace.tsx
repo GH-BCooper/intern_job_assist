@@ -250,7 +250,12 @@ function RemindersTab({ companyOf }: { companyOf: CompanyOf }) {
         <button
           onClick={() => {
             if (!title.trim()) return;
-            addReminder({ title: title.trim(), due_at: new Date(when).toISOString(), repeat });
+            const due = new Date(when);
+            if (!when || Number.isNaN(due.getTime())) {
+              toast('Pick a date and time for the reminder.', 'error');
+              return;
+            }
+            addReminder({ title: title.trim(), due_at: due.toISOString(), repeat });
             setTitle('');
             toast(repeat === 'none' ? 'Reminder set.' : 'Recurring reminder set — it re-schedules itself when you complete it.', 'success');
           }}

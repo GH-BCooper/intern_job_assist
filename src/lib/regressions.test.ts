@@ -344,3 +344,59 @@ describe('overlapping automation passes', () => {
     expect(read().reminders.filter(r => r.title.startsWith('Follow up'))).toHaveLength(1);
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* ICS folding is in octets and never splits a character               */
+/* ------------------------------------------------------------------ */
+
+describe('ics fold', () => {
+  const CRLF = String.fromCharCode(13, 10);
+
+  it('keeps every line within 75 octets, even with accents and emoji', async () => {
+    const { fold } = await import('./ics');
+    const title = 'SUMMARY:' + 'Entrevista técnica 🚀 con el equipo de plataforma '.repeat(6);
+    const lines = fold(title).split(CRLF);
+    expect(lines.length).toBeGreaterThan(1);
+    const encoder = new TextEncoder();
+    lines.forEach(line => expect(encoder.encode(line).length).toBeLessThanOrEqual(75));
+  });
+
+  it('never cuts a character in half — unfolding gives the original text back', async () => {
+    const { fold } = await import('./ics');
+    const original = 'DESCRIPTION:' + '面接 — round 2 🚀🚀🚀 café '.repeat(20);
+    const unfolded = fold(original)
+      .split(CRLF)
+      .map((line, i) => (i === 0 ? line : line.slice(1)))
+      .join('');
+    expect(unfolded).toBe(original);
+    expect(unfolded.includes(String.fromCharCode(0xfffd))).toBe(false);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Exports: two applications at one company must not overwrite          */
+/* ------------------------------------------------------------------ */
+
+describe('exportAllApplicationsZip', () => {
+  it('keeps every application when several share a company name', async () => {
+    const saved: Blob[] = [];
+    vi.doMock('file-saver', () => ({ saveAs: (blob: Blob) => saved.push(blob) }));
+    vi.resetModules();
+    const { exportAllApplicationsZip } = await import('../utils/zipExportUtils');
+    const JSZip = (await import('jszip')).default;
+
+    const apps = [
+      makeApp({ id: 'a', company_name: 'Stripe', role_applied_to: 'Backend Intern' }),
+      makeApp({ id: 'b', company_name: 'Stripe', role_applied_to: 'Frontend Intern' }),
+      makeApp({ id: 'c', company_name: 'Stripe', role_applied_to: 'Frontend Intern' }),
+    ];
+    await exportAllApplicationsZip(apps, {}, {}, {}, 'pdf');
+
+    expect(saved).toHaveLength(1);
+    const zip = await JSZip.loadAsync(saved[0]);
+    const files = Object.keys(zip.files).filter(name => name.endsWith('.pdf'));
+    expect(files).toHaveLength(3);
+    expect(new Set(files.map(f => f.toLowerCase())).size).toBe(3);
+    vi.doUnmock('file-saver');
+  });
+});

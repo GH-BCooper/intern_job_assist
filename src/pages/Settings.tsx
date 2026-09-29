@@ -984,7 +984,7 @@ export default function Settings() {
         <Section
           icon={Lock}
           title="Privacy & security"
-          description="Encrypt sensitive local fields behind a passphrase, lock the app when idle, add a second login factor, or wipe everything."
+          description="Lock the app behind a passphrase when idle, expire document links, add a second login factor, or wipe everything."
         >
           <Toggle
             on={prefs.signedUrls}
@@ -994,7 +994,7 @@ export default function Settings() {
           />
 
           <div className="divider my-2" />
-          <label className="label">Local vault passphrase</label>
+          <label className="label">Lock-screen passphrase</label>
           {!vaultSupported() ? (
             <p className="text-[11px] text-light-500 dark:text-dark-400">This browser has no Web Crypto support.</p>
           ) : hasPassphrase() ? (
@@ -1024,7 +1024,7 @@ export default function Settings() {
                       }
                       unlockVault(vaultPass);
                       setVaultPass('');
-                      toast('Vault unlocked for this tab.', 'success');
+                      toast('Unlocked for this tab.', 'success');
                     }}
                     disabled={vaultBusy || !vaultPass}
                     className="btn-secondary btn-sm"
@@ -1046,7 +1046,7 @@ export default function Settings() {
               )}
               <button
                 onClick={() => {
-                  if (!window.confirm('Remove the passphrase? Anything already encrypted stays encrypted and unreadable.')) return;
+                  if (!window.confirm('Remove the lock-screen passphrase? The idle lock will stop working until you set a new one.')) return;
                   forgetPassphrase();
                   lockVault();
                   toast('Passphrase removed.', 'info');
@@ -1076,7 +1076,7 @@ export default function Settings() {
                   unlockVault(vaultPass);
                   setVaultBusy(false);
                   setVaultPass('');
-                  toast('Vault set up. It is never stored — losing it loses the encrypted values.', 'success');
+                  toast('Passphrase set. It is never stored, so keep it somewhere safe — you can remove it here if you forget it.', 'success');
                 }}
                 disabled={vaultBusy || vaultPass.length < 8}
                 className="btn-secondary btn-sm"
@@ -1086,8 +1086,10 @@ export default function Settings() {
             </div>
           )}
           <p className="text-[11px] text-light-500 dark:text-dark-400 mt-1.5 leading-relaxed">
-            AES-GCM through the browser's own Web Crypto API, with a PBKDF2-derived key. The passphrase is never stored
-            or transmitted — only a verifier blob is, so a wrong passphrase fails cleanly instead of producing garbage.
+            This passphrase gates the idle lock screen below. It is checked with the browser's own Web Crypto API
+            (AES-GCM, PBKDF2) and is never stored or transmitted — only a verifier. It keeps someone at your keyboard
+            out of the app; it does not encrypt the notes and contacts held in this browser, so turn on your device's disk
+            encryption for that.
           </p>
 
           <div className="divider my-3" />
@@ -1104,7 +1106,7 @@ export default function Settings() {
             <option value={60}>After an hour</option>
           </select>
           <p className="text-[11px] text-light-500 dark:text-dark-400 mt-1">
-            Re-prompts for the vault passphrase without signing you out. Needs a passphrase set above.
+            Re-prompts for your passphrase without signing you out. Needs a passphrase set above.
           </p>
 
           <div className="divider my-3" />

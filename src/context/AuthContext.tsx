@@ -121,6 +121,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [adoptUser]);
 
   const signUp = async (email: string, password: string, name: string): Promise<Result & { sessionCreated: boolean }> => {
+    // A stray space (mobile keyboards add one after autocomplete) fails validation
+    // with an unhelpful message, so every address is trimmed on the way in.
+    email = email.trim();
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -131,6 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signIn = async (email: string, password: string): Promise<Result> => {
+    email = email.trim();
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return { error: mapError(error.message) };
     return { error: null };
@@ -141,7 +145,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOutEverywhere = async () => {
-    await supabase.auth.signOut({ scope: 'global' });
+    const { error } = await supabase.auth.signOut({ scope: 'global' });
+    // Say so if other devices could not be signed out; "signed out everywhere"
+    // must not be assumed from a request that failed.
+    if (error) throw new Error(error.message);
   };
 
   const signInWithGoogle = async (): Promise<Result> => {
@@ -158,12 +165,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // --- signup OTP ---
 
   const verifySignupOtp = async (email: string, token: string): Promise<Result> => {
+    email = email.trim();
     const { error } = await supabase.auth.verifyOtp({ email, token, type: 'signup' });
     if (error) return { error: mapError(error.message) };
     return { error: null };
   };
 
   const resendSignupOtp = async (email: string): Promise<Result> => {
+    email = email.trim();
     const { error } = await supabase.auth.resend({ type: 'signup', email });
     if (error) return { error: mapError(error.message) };
     return { error: null };
@@ -172,18 +181,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // --- forgot / reset password ---
 
   const requestPasswordReset = async (email: string): Promise<Result> => {
+    email = email.trim();
     const { error } = await supabase.auth.resetPasswordForEmail(email);
     if (error) return { error: mapError(error.message) };
     return { error: null };
   };
 
   const verifyPasswordResetOtp = async (email: string, token: string): Promise<Result> => {
+    email = email.trim();
     const { error } = await supabase.auth.verifyOtp({ email, token, type: 'recovery' });
     if (error) return { error: mapError(error.message) };
     return { error: null };
   };
 
   const resendPasswordResetOtp = async (email: string): Promise<Result> => {
+    email = email.trim();
     const { error } = await supabase.auth.resetPasswordForEmail(email);
     if (error) return { error: mapError(error.message) };
     return { error: null };
@@ -198,12 +210,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // --- change email (secure, dual OTP) ---
 
   const requestEmailChange = async (newEmail: string): Promise<Result> => {
+    newEmail = newEmail.trim();
     const { error } = await supabase.auth.updateUser({ email: newEmail });
     if (error) return { error: mapError(error.message) };
     return { error: null };
   };
 
   const verifyEmailChangeOtp = async (email: string, token: string): Promise<Result> => {
+    email = email.trim();
     const { error } = await supabase.auth.verifyOtp({ email, token, type: 'email_change' });
     if (error) return { error: mapError(error.message) };
     const { data } = await supabase.auth.getUser();

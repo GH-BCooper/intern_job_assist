@@ -447,8 +447,16 @@ export default function AccountSecurity() {
         <button
           onClick={async () => {
             setSigningOutAll(true);
-            await signOutEverywhere();
-            setSigningOutAll(false);
+            try {
+              await signOutEverywhere();
+            } catch (e) {
+              toast(
+                `Could not sign out other devices: ${e instanceof Error ? e.message : 'try again'}. Change your password if you think a session is compromised.`,
+                'error',
+              );
+            } finally {
+              setSigningOutAll(false);
+            }
           }}
           disabled={signingOutAll}
           className="btn-secondary btn-sm !text-red-600 dark:!text-red-400 !border-red-300 dark:!border-red-900"

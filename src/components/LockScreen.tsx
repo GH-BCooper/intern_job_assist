@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { Loader2, Lock } from 'lucide-react';
 import { unlock as unlockVault, verifyPassphrase } from '../lib/vault';
 import { useAuth } from '../context/AuthContext';
@@ -10,6 +11,8 @@ import { play } from '../lib/fx';
  */
 export default function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
   const { user, signOut } = useAuth();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef);
   const [passphrase, setPassphrase] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -36,6 +39,7 @@ export default function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
 
   return (
     <div
+      ref={dialogRef}
       className="fixed inset-0 z-[200] bg-light-200 dark:bg-dark-950 flex items-center justify-center p-6"
       role="dialog"
       aria-modal="true"

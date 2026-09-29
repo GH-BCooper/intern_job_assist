@@ -28,7 +28,7 @@ Built with React, TypeScript and Supabase — and designed so that running it co
 - 📄 **Documents** - Upload resumes and cover letters with PDF text extraction, served through time-limited signed URLs.
 - 💾 **Exports & imports** - PDF, one-pager briefs, DOCX, CSV, JSON, .ics, a self-contained HTML portfolio and bulk ZIP; import from Huntr, Teal, Simplify or LinkedIn.
 - 🔌 **Add from anywhere** - A bookmarklet that needs no extension store, or an unpacked browser extension.
-- 🔐 **Privacy** - Optional AES-GCM encryption of local fields via Web Crypto, idle auto-lock, TOTP two-factor login, and a one-button data wipe.
+- 🔐 **Privacy** - A passphrase-gated idle lock screen (checked with Web Crypto, never stored), TOTP two-factor login, backups that leave your API keys out, and a one-button data wipe that also removes uploaded files and share links. Note the passphrase locks the screen; it does not encrypt the data held in the browser.
 - 📲 **Installable PWA** - Works offline via a service worker, with background sync where the browser supports it.
 - 🌙 **Light & dark** - A bright, warm light mode and a low-glare dark mode.
 - 🔐 **Secure authentication** - Email/password and Google sign-in via Supabase.
@@ -69,14 +69,14 @@ Every layer runs on a permanent free tier — Vercel Hobby, the Supabase free ti
 ### Browser APIs used instead of dependencies
 - **Web Speech** - Voice input and spoken replies
 - **Web Audio** - Synthesized interface sounds, so there are no audio files to host
-- **Web Crypto** - AES-GCM vault encryption
+- **Web Crypto** - passphrase verification for the idle lock
 - **Web Workers** - Analytics off the main thread for large histories
 - **Background Sync** - Automation passes when the tab isn't focused
 - **Canvas** - Hand-rolled confetti
 
 ### Build Tools
 - **Vite** - Build tool & dev server
-- **Vitest + Testing Library** - 256 tests
+- **Vitest + Testing Library** - 330+ tests, plus a real-browser end-to-end run
 - **ESLint** - Code linting
 - **PostCSS + Autoprefixer** - CSS processing
 
@@ -122,10 +122,11 @@ The app will be available at `http://localhost:5173`
 - `npm run preview` - Preview production build locally (port 4173)
 - `npm run lint` - Run ESLint
 - `npm run typecheck` - Run TypeScript type checking
-- `npm test` - Run the test suite (280 tests)
+- `npm test` - Run the test suite (330+ tests)
 - `npm run test:coverage` - Tests with a coverage report
 - `npm run test:all` - typecheck + lint + tests + build, in that order
 - `npm run smoke` - Drive the built app in your installed Chrome (run `npm run preview` first)
+- `npm run e2e` - Build the app against an in-memory Supabase fake and drive the **signed-in** screens in your installed Chrome: drag and drop, undo, switch geometry, phone-width overflow, a 300-application performance check and a console-error gate. Needs no account, no network and no credentials.
 - `npm run setup:supabase -- sbp_token` - Apply pending migrations and deploy the calendar feed
 - `npm run icons:extension` - Regenerate the browser extension's icons from the PWA icon
 
@@ -232,7 +233,7 @@ src/
 │   └── supabase.ts           # client, types, storage helpers
 ├── utils/                    # export, pdf and zip helpers
 ├── App.tsx  main.tsx  index.css
-└── *.test.ts(x)              # 256 tests, colocated with what they cover
+└── *.test.ts(x)              # 330+ tests, colocated with what they cover
 
 extension/                    # unpacked MV3 "Add to InternTrack" extension
 supabase/

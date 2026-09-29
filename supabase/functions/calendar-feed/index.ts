@@ -57,15 +57,27 @@ function esc(value: string): string {
 }
 
 function fold(line: string): string {
-  if (line.length <= 75) return line;
-  const out = [line.slice(0, 75)];
-  let rest = line.slice(75);
-  while (rest.length > 74) {
-    out.push(` ${rest.slice(0, 74)}`);
-    rest = rest.slice(74);
+  const encoder = new TextEncoder();
+  if (encoder.encode(line).length <= 75) return line;
+
+  const parts: string[] = [];
+  let current = '';
+  let bytes = 0;
+  let limit = 75;
+  // `for…of` walks code points, so a surrogate pair is never split.
+  for (const ch of line) {
+    const size = encoder.encode(ch).length;
+    if (bytes + size > limit) {
+      parts.push(parts.length ? ` ${current}` : current);
+      current = '';
+      bytes = 0;
+      limit = 74; // continuation lines start with one space
+    }
+    current += ch;
+    bytes += size;
   }
-  if (rest) out.push(` ${rest}`);
-  return out.join('\r\n');
+  parts.push(parts.length ? ` ${current}` : current);
+  return parts.join('\r\n');
 }
 
 function buildCalendar(events: FeedEvent[], name: string): string {

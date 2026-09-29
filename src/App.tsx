@@ -108,6 +108,8 @@ function UiBridge() {
       if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'z') return;
       const target = e.target as HTMLElement | null;
       if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      // Nothing happens behind the idle lock.
+      if (document.querySelector('[aria-label="Locked"]')) return;
       if (!peekUndo()) return;
       e.preventDefault();
       void runUndo();

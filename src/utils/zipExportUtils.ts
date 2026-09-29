@@ -330,9 +330,39 @@ export async function exportAllApplicationsZip(
   if (!apps.length) return;
 
   const zip = new JSZip();
+  const taken = new Set<string>();
+
+  /**
+   * A folder name no other application has claimed.
+   *
+   * Two roles at one company (or applying twice) shared the same folder and file
+   * name, so the second silently overwrote the first — an application missing
+   * from a backup with no warning. The role tells them apart; a counter is the
+   * last resort.
+   */
+  const uniqueName = (app: Application): string => {
+    const base = sanitizeFileName(app.company_name, "application");
+    const candidates = [
+      base,
+      app.role_applied_to ? sanitizeFileName(`${base} - ${app.role_applied_to}`, base) : "",
+    ].filter(Boolean);
+    for (const candidate of candidates) {
+      if (!taken.has(candidate.toLowerCase())) {
+        taken.add(candidate.toLowerCase());
+        return candidate;
+      }
+    }
+    for (let n = 2; ; n += 1) {
+      const candidate = `${base} (${n})`;
+      if (!taken.has(candidate.toLowerCase())) {
+        taken.add(candidate.toLowerCase());
+        return candidate;
+      }
+    }
+  };
 
   for (const app of apps) {
-    const companyName = sanitizeFileName(app.company_name, "application");
+    const companyName = uniqueName(app);
     const companyFolder = zip.folder(companyName) || zip;
     const interviews = interviewsMap[app.id] || [];
     const learnings = learningsMap[app.id];
