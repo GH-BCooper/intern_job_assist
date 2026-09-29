@@ -244,6 +244,28 @@ async function waitForServer() {
       });
     }
 
+    /* ------------------------------ navbar widths ------------------------------ */
+
+    // The labelled bar needs ~1,100px; it used to switch on at 768px, pushing
+    // notifications, settings and sign-out off the screen on tablets.
+    for (const width of [768, 1024, 1100, 1279, 1440]) {
+      await check(`navbar fits and sign-out is reachable at ${width}px`, async () => {
+        const session = await newSession({ width, height: 720 });
+        await go(session.page, '/dashboard');
+        await session.page.waitForSelector('nav');
+        const info = await session.page.evaluate(() => {
+          const nav = document.querySelector('nav');
+          const shown = [...nav.querySelectorAll('button,a')].filter(e => e.offsetParent !== null);
+          const names = shown.map(e => (e.getAttribute('aria-label') || e.innerText || '').trim());
+          const overflow = Math.max(...[...nav.querySelectorAll('*')].map(e => e.getBoundingClientRect().right)) - document.documentElement.clientWidth;
+          return { overflow, menu: names.some(n => /^menu$/i.test(n)), signOut: names.some(n => /sign out/i.test(n)) };
+        });
+        await session.context.close();
+        assert(info.overflow <= 1, `the navbar overflows the screen by ${Math.round(info.overflow)}px`);
+        assert(info.menu || info.signOut, 'no way to reach the menu or sign out');
+      });
+    }
+
     /* ---------------------------- large pipeline ---------------------------- */
 
     const big = await newSession();

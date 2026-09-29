@@ -33,6 +33,7 @@ import {
 import { useData, type InterviewDraft } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import { useStore } from '../hooks/useStore';
+import { useT } from '../hooks/useT';
 import type { Application, ApplicationInsert, InterviewLearning } from '../lib/supabase';
 import {
   computeAnalytics,
@@ -121,6 +122,7 @@ export default function Dashboard() {
     loadLearnings,
   } = useData();
   const store = useStore();
+  const t = useT();
 
   const [view, setView] = useState<string>(store.preferences.defaultView);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
@@ -499,7 +501,7 @@ export default function Dashboard() {
             }}
             className="btn-primary"
           >
-            <Plus size={16} /> Add application
+            <Plus size={16} /> {t('action.add')}
           </button>
         </>
       }
@@ -508,7 +510,7 @@ export default function Dashboard() {
 
       {/* bento hero: variable-sized tiles instead of a uniform stat row */}
       <div className="bento mb-5">
-        <BentoTile label="Momentum" icon={Gauge} span="wide" accent>
+        <BentoTile label={t('stat.momentum')} icon={Gauge} span="wide" accent>
           <div className="flex items-end gap-4">
             <div>
               <p className="text-4xl font-bold tabular-nums leading-none text-light-900 dark:text-white animate-count-up">
@@ -548,9 +550,9 @@ export default function Dashboard() {
           <StatTile label="Interviewing" value={analytics.byStage.Interviewing} icon={CalendarClock} tone="text-primary-600 dark:text-primary-400" hint="No dates logged yet" />
         )}
 
-        <StatTile label="Active" value={analytics.active} icon={Briefcase} />
+        <StatTile label={t('stat.active')} value={analytics.active} icon={Briefcase} />
         <StatTile
-          label="Offers"
+          label={t('stat.offers')}
           value={analytics.offers}
           icon={TrendingUp}
           tone="text-emerald-600 dark:text-emerald-400"
@@ -568,7 +570,7 @@ export default function Dashboard() {
           }
         />
         <StatTile
-          label="Need follow-up"
+          label={t('stat.followUp')}
           value={analytics.stale.length}
           icon={AlertTriangle}
           tone={analytics.stale.length ? 'text-amber-600 dark:text-amber-400' : undefined}
@@ -909,7 +911,7 @@ export default function Dashboard() {
           {applications.length === 0 ? (
             <EmptyState
               art="inbox"
-              title="No applications yet"
+              title={t('empty.noApplications')}
               hint="Add one yourself, paste a posting for Scout to read, or just say: “I applied to Stripe for a backend internship on LinkedIn today.”"
               action={
                 <>
@@ -920,7 +922,7 @@ export default function Dashboard() {
                     }}
                     className="btn-primary"
                   >
-                    <Plus size={15} /> Add application
+                    <Plus size={15} /> {t('action.add')}
                   </button>
                   <button onClick={() => setQuickAddText('')} className="btn-secondary">
                     <Sparkles size={15} /> Paste a posting
@@ -931,8 +933,8 @@ export default function Dashboard() {
           ) : (
             <EmptyState
               art="search"
-              title="Nothing matches"
-              hint="Loosen a filter and try again."
+              title={t('empty.nothingMatches')}
+              hint={t('empty.loosenFilter')}
               action={
                 <button
                   onClick={() => {

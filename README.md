@@ -127,6 +127,7 @@ The app will be available at `http://localhost:5173`
 - `npm run test:all` - typecheck + lint + tests + build, in that order
 - `npm run smoke` - Drive the built app in your installed Chrome (run `npm run preview` first)
 - `npm run e2e` - Build the app against an in-memory Supabase fake and drive the **signed-in** screens in your installed Chrome: drag and drop, undo, switch geometry, phone-width overflow, a 300-application performance check and a console-error gate. Needs no account, no network and no credentials.
+- `npm run e2e:monkey` - A randomised session against the same build (`MONKEY_STEPS`, `MONKEY_SEED`): random clicks, keystrokes and form input across every page, failing on any crash, error boundary, blank page or console error.
 - `npm run setup:supabase -- sbp_token` - Apply pending migrations and deploy the calendar feed
 - `npm run icons:extension` - Regenerate the browser extension's icons from the PWA icon
 

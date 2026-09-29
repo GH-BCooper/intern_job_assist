@@ -153,6 +153,16 @@ export function translate(locale: LocaleId, key: MessageKey, vars?: Record<strin
   return raw.replace(/\{(\w+)\}/g, (_, name: string) => String(vars[name] ?? ''));
 }
 
+/**
+ * A stage's name in a locale, or the stage's own name when there is no translation.
+ * (`translate` alone would fall back to the key, "stage.Wishlist".)
+ */
+export function translateStage(locale: LocaleId, stage: string): string {
+  const key = `stage.${stage}` as MessageKey;
+  const out = translate(locale, key);
+  return out === key ? stage : out;
+}
+
 /** Bound translator, so components read `t('nav.dashboard')`. */
 export function translator(locale: LocaleId) {
   return (key: MessageKey, vars?: Record<string, string | number>) => translate(locale, key, vars);

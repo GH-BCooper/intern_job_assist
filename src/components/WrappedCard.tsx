@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 import { Download, Flame, Share2, Sparkles, TrendingUp, Trophy, X } from 'lucide-react';
 import type { Wrapped } from '../lib/insights';
 import { fmtDate } from '../lib/format';
@@ -12,6 +13,7 @@ import { toast } from '../lib/uiBus';
 export default function WrappedCard({ data, onClose }: { data: Wrapped; onClose: () => void }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   useFocusTrap(dialogRef);
+  useEscapeKey(onClose);
   const cardRef = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false);
 

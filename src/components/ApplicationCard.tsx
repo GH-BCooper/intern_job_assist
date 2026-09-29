@@ -88,6 +88,7 @@ function useCardView(appId: string, app: Application) {
     return {
       stage: stageOf(app, s.stageOverrides),
       labels: s.preferences.stageLabels,
+      locale: s.preferences.locale,
       starred: s.starred.includes(appId),
       priority: s.priorities[appId] || 0,
       tags,
@@ -145,7 +146,7 @@ function ApplicationCard({ application: app, interviews = NO_INTERVIEWS, onOpen,
             <p className="text-xs text-light-600 dark:text-dark-300 truncate">{app.role_applied_to}</p>
           )}
           <div className="mt-1 flex items-center gap-2 flex-wrap">
-            <StageDot stage={stage} label={stageLabel(stage, { stageLabels: view.labels })} />
+            <StageDot stage={stage} label={stageLabel(stage, { stageLabels: view.labels, locale: view.locale })} />
             <PriorityFlames value={priority} />
           </div>
         </div>

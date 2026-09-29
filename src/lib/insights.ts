@@ -1,5 +1,6 @@
 import type { Application, InterviewDate } from './supabase';
-import type { StageChange, StoreShape } from './store';
+import type { LocaleId, StageChange, StoreShape } from './store';
+import { translateStage } from './i18n';
 import { DAY_MS, addDays, dayKey, daysSince, parseDate, startOfMonth, startOfWeek, toDateInput, ts } from './format';
 
 export const STAGES = ['Wishlist', 'Applied', 'In Review', 'Interviewing', 'Offer', 'Closed'] as const;
@@ -404,8 +405,12 @@ export function orderedStages(prefs: { stageOrder?: string[] }): Stage[] {
   return order.length ? [...order, ...missing] : [...STAGES];
 }
 
-export function stageLabel(stage: string, prefs: { stageLabels?: Record<string, string> }): string {
-  return prefs.stageLabels?.[stage]?.trim() || stage;
+/**
+ * What a stage is called on screen: the user's own name for it if they set one,
+ * otherwise its name in their language.
+ */
+export function stageLabel(stage: string, prefs: { stageLabels?: Record<string, string>; locale?: LocaleId }): string {
+  return prefs.stageLabels?.[stage]?.trim() || translateStage(prefs.locale ?? 'en', stage);
 }
 
 /** Soft cap for a column; 0 means unlimited. */
@@ -799,7 +804,7 @@ export function weeklyWrapped(
 
   return {
     from: dayKey(start),
-    to: dayKey(new Date(end.getTime() - DAY_MS)),
+    to: dayKey(addDays(end, -1)),
     applications: inWeek.length,
     interviews,
     offers,

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2, Info, RotateCcw, X } from 'lucide-react';
 import { onUi } from '../../lib/uiBus';
 import { runUndo } from '../../lib/undo';
+import { useT } from '../../hooks/useT';
 
 type Item = { id: number; level: 'info' | 'success' | 'error'; message: string; undoId?: string };
 
@@ -17,6 +18,7 @@ const ICONS = { info: Info, success: CheckCircle2, error: AlertCircle };
 const UNDO_MS = 5000;
 
 export default function Toaster() {
+  const t = useT();
   const [items, setItems] = useState<Item[]>([]);
   /** Mirrors every toast into a polite live region for screen readers. */
   const [announcement, setAnnouncement] = useState('');
@@ -66,7 +68,7 @@ export default function Toaster() {
                     }}
                     className="inline-flex items-center gap-1 px-2 py-0.5 -my-0.5 rounded-lg font-semibold text-xs border border-current/30 hover:bg-current/10 transition-colors flex-shrink-0"
                   >
-                    <RotateCcw size={11} /> Undo
+                    <RotateCcw size={11} /> {t('action.undo')}
                   </button>
                 )}
                 <button

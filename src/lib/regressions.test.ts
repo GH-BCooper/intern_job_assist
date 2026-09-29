@@ -400,3 +400,83 @@ describe('exportAllApplicationsZip', () => {
     vi.doUnmock('file-saver');
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* Webhooks: Discord needs JSON, Slack-style hooks must stay "simple"    */
+/* ------------------------------------------------------------------ */
+
+describe('postWebhook', () => {
+  it('sends JSON to Discord, which rejects anything else', async () => {
+    const { postWebhook } = await import('./automation');
+    const fetchMock = vi.fn().mockResolvedValue(new Response('ok'));
+    vi.stubGlobal('fetch', fetchMock);
+    await postWebhook('https://discord.com/api/webhooks/1/abc', { content: 'hi' });
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json');
+    vi.unstubAllGlobals();
+  });
+
+  it('sends a header-less request to hosts without CORS support, so no preflight is needed', async () => {
+    const { postWebhook } = await import('./automation');
+    const fetchMock = vi.fn().mockResolvedValue(new Response('ok'));
+    vi.stubGlobal('fetch', fetchMock);
+    await postWebhook('https://hooks.slack.com/services/T/B/x', { text: 'hi' });
+    await postWebhook('https://hooks.zapier.com/hooks/catch/1/abc/', { text: 'hi' });
+    fetchMock.mock.calls.forEach(call => expect((call[1] as RequestInit).headers).toBeUndefined());
+    vi.unstubAllGlobals();
+  });
+
+  it('ignores a value that is not a URL, and swallows network failures', async () => {
+    const { postWebhook } = await import('./automation');
+    const fetchMock = vi.fn().mockRejectedValue(new Error('offline'));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(postWebhook('not a url', {})).resolves.toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
+    await expect(postWebhook('https://example.com/hook', {})).resolves.toBeUndefined();
+    vi.unstubAllGlobals();
+  });
+});
+
+describe('weekly wrap-up range in a daylight-saving week', () => {
+  const previousTz = process.env.TZ;
+  beforeEach(() => {
+    process.env.TZ = 'America/New_York';
+  });
+  afterEach(() => {
+    if (previousTz === undefined) delete process.env.TZ;
+    else process.env.TZ = previousTz;
+  });
+
+  it('ends on Sunday, not Saturday, in the week clocks go forward', async () => {
+    const { weeklyWrapped } = await import('./insights');
+    const store = makeEmptyStore();
+    const at = new Date(2026, 2, 4, 12); // Wed 4 Mar; the week ends Sun 8 Mar, when DST starts
+    const wrapped = weeklyWrapped([], {}, computeAnalytics([], {}, store, 7), at);
+    expect(wrapped.from).toBe('2026-03-02');
+    expect(wrapped.to).toBe('2026-03-08');
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Language: the picker used to change nothing on screen               */
+/* ------------------------------------------------------------------ */
+
+describe('stageLabel and language', () => {
+  it('uses the chosen language for the built-in stage names', async () => {
+    const { stageLabel } = await import('./insights');
+    expect(stageLabel('Applied', { locale: 'es' })).toBe('Enviada');
+    expect(stageLabel('Interviewing', { locale: 'hi' })).toBe('साक्षात्कार');
+    expect(stageLabel('Applied', {})).toBe('Applied');
+  });
+
+  it('lets a name the user typed win over any translation', async () => {
+    const { stageLabel } = await import('./insights');
+    expect(stageLabel('Applied', { locale: 'es', stageLabels: { Applied: 'Sent' } })).toBe('Sent');
+    expect(stageLabel('Applied', { locale: 'es', stageLabels: { Applied: '   ' } })).toBe('Enviada');
+  });
+
+  it('falls back to the stage itself, never to a raw key', async () => {
+    const { stageLabel } = await import('./insights');
+    expect(stageLabel('Custom Stage', { locale: 'es' })).toBe('Custom Stage');
+  });
+});

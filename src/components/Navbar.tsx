@@ -21,19 +21,22 @@ import { useTheme } from '../context/ThemeContext';
 import NotificationCenter from './NotificationCenter';
 import { emitUi } from '../lib/uiBus';
 import { avatarGradient, initials } from '../lib/format';
+import { useT } from '../hooks/useT';
+import type { MessageKey } from '../lib/i18n';
 
-const NAV = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/insights', label: 'Insights', icon: TrendingUp },
-  { to: '/calendar', label: 'Calendar', icon: CalendarDays },
-  { to: '/workspace', label: 'Workspace', icon: FolderKanban },
-  { to: '/prep', label: 'Prep', icon: Brain },
-  { to: '/automations', label: 'Automations', icon: Zap },
+const NAV: { to: string; msg: MessageKey; icon: typeof Zap }[] = [
+  { to: '/dashboard', msg: 'nav.dashboard', icon: LayoutDashboard },
+  { to: '/insights', msg: 'nav.insights', icon: TrendingUp },
+  { to: '/calendar', msg: 'nav.calendar', icon: CalendarDays },
+  { to: '/workspace', msg: 'nav.workspace', icon: FolderKanban },
+  { to: '/prep', msg: 'nav.prep', icon: Brain },
+  { to: '/automations', msg: 'nav.automations', icon: Zap },
 ];
 
 export default function Navbar() {
   const { user, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const t = useT();
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -63,14 +66,18 @@ export default function Navbar() {
           </Link>
 
           {user && (
-            <div className="hidden md:flex items-center gap-1 flex-1">
+            // The whole labelled bar needs roughly 1,100px. It used to switch on at
+            // 768px, so on tablets and small windows the right-hand controls —
+            // notifications, settings, sign-out — were pushed off the screen and the
+            // menu button was already gone. Below `xl` the menu takes over.
+            <div className="hidden xl:flex items-center gap-1 flex-1">
               {NAV.map(item => {
                 const Icon = item.icon;
                 const active = location.pathname === item.to;
                 return (
                   <Link key={item.to} to={item.to} className={`tab ${active ? 'tab-active' : ''}`}>
                     <Icon size={14} />
-                    {item.label}
+                    {t(item.msg)}
                   </Link>
                 );
               })}
@@ -99,29 +106,29 @@ export default function Navbar() {
                 </button>
                 <Link
                   to="/settings"
-                  className={`btn-ghost btn-icon hidden sm:inline-flex ${
+                  className={`btn-ghost btn-icon hidden xl:inline-flex ${
                     location.pathname === '/settings' ? 'text-primary-600 dark:text-primary-400' : ''
                   }`}
-                  title="Settings"
-                  aria-label="Settings"
+                  title={t('nav.settings')}
+                  aria-label={t('nav.settings')}
                 >
                   <SettingsIcon size={17} />
                 </Link>
 
-                <div className="hidden lg:flex items-center gap-2 pl-2 ml-1 border-l border-light-300 dark:border-dark-800">
+                <div className="hidden xl:flex items-center gap-2 pl-2 ml-1 border-l border-light-300 dark:border-dark-800">
                   <span
                     className={`w-7 h-7 rounded-lg bg-gradient-to-br ${avatarGradient(displayName)} flex items-center justify-center text-white text-[11px] font-bold`}
                   >
                     {initials(displayName)}
                   </span>
-                  <button onClick={handleSignOut} className="btn-ghost btn-icon" title="Sign out" aria-label="Sign out">
+                  <button onClick={handleSignOut} className="btn-ghost btn-icon" title={t('nav.signOut')} aria-label={t('nav.signOut')}>
                     <LogOut size={16} />
                   </button>
                 </div>
 
                 <button
                   onClick={() => setMobileOpen(o => !o)}
-                  className="btn-ghost btn-icon md:hidden"
+                  className="btn-ghost btn-icon xl:hidden"
                   aria-label="Menu"
                   aria-expanded={mobileOpen}
                 >
@@ -146,9 +153,9 @@ export default function Navbar() {
       </div>
 
       {user && mobileOpen && (
-        <div className="md:hidden border-t border-light-300 dark:border-dark-800 bg-light-100 dark:bg-dark-950 animate-fade-in">
+        <div className="xl:hidden border-t border-light-300 dark:border-dark-800 bg-light-100 dark:bg-dark-950 animate-fade-in">
           <div className="px-4 py-3 space-y-1">
-            {[...NAV, { to: '/settings', label: 'Settings', icon: SettingsIcon }].map(item => {
+            {[...NAV, { to: '/settings', msg: 'nav.settings' as MessageKey, icon: SettingsIcon }].map(item => {
               const Icon = item.icon;
               const active = location.pathname === item.to;
               return (
@@ -162,7 +169,7 @@ export default function Navbar() {
                   }`}
                 >
                   <Icon size={15} />
-                  {item.label}
+                  {t(item.msg)}
                 </Link>
               );
             })}
@@ -170,7 +177,7 @@ export default function Navbar() {
               onClick={handleSignOut}
               className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-red-600 dark:text-red-400"
             >
-              <LogOut size={15} /> Sign out
+              <LogOut size={15} /> {t('nav.signOut')}
             </button>
           </div>
         </div>

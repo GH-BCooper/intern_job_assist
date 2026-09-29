@@ -464,6 +464,11 @@ export default function Settings() {
 
           <label className="label">Model</label>
           <select value={model} onChange={e => setModel(e.target.value)} className="input-field mb-3">
+            {/* A saved model that has since left the list is still what requests use;
+                showing the first option instead would misreport it. */}
+            {!provider.models.some(m => m.id === model) && (
+              <option value={model}>{model} — no longer listed</option>
+            )}
             {provider.models.map(m => (
               <option key={m.id} value={m.id}>
                 {m.label}
@@ -637,9 +642,9 @@ export default function Settings() {
 
             <div className="mt-3 p-3 rounded-xl bg-light-200/70 dark:bg-dark-900 border border-light-300 dark:border-dark-800">
               <p className="text-[11px] text-light-600 dark:text-dark-300 leading-relaxed">
-                <strong className="text-light-900 dark:text-white">Keyboard board:</strong> arrows to move between cards,
-                ⌥+arrow or 1–6 to move the focused card, Enter to open, ? for the full list. Toasts and stage changes are
-                announced through a live region.
+                <strong className="text-light-900 dark:text-white">Keyboard board:</strong> Tab to the board (or click a
+                card), then arrows to move between cards, ⌥+arrow or 1–6 to move the focused card, Enter to open, ? for the
+                full list. Toasts and stage changes are announced through a live region.
               </p>
             </div>
           </Section>
@@ -674,12 +679,15 @@ export default function Settings() {
                   />
                   <button
                     onClick={() => {
+                      // The first stage has nowhere earlier to go. It used to swap with
+                      // the last one, which turned Wishlist…Closed into Closed…Wishlist.
+                      if (index === 0) return;
                       const next = [...list];
-                      const target = index === 0 ? next.length - 1 : index - 1;
-                      [next[index], next[target]] = [next[target], next[index]];
+                      [next[index], next[index - 1]] = [next[index - 1], next[index]];
                       savePreferences({ stageOrder: next });
                     }}
-                    className="btn-ghost btn-icon !p-1.5"
+                    disabled={index === 0}
+                    className="btn-ghost btn-icon !p-1.5 disabled:opacity-30"
                     aria-label={`Move ${stage} earlier`}
                     title="Move earlier"
                   >
@@ -721,7 +729,7 @@ export default function Settings() {
                 value={seasonName}
                 onChange={e => setSeasonName(e.target.value)}
                 onKeyDown={e => {
-                  if (e.key !== 'Enter' || !seasonName.trim()) return;
+                  if (e.key !== 'Enter' || e.nativeEvent.isComposing || !seasonName.trim()) return;
                   addSeason(seasonName);
                   setSeasonName('');
                 }}

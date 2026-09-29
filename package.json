@@ -16,7 +16,8 @@
     "test:all": "npm run typecheck && npm run lint && npm test && npm run build",
     "setup:supabase": "node scripts/setup-supabase.cjs",
     "icons:extension": "node scripts/make-extension-icons.cjs",
-    "e2e": "node e2e/run.cjs"
+    "e2e": "node e2e/run.cjs",
+    "e2e:monkey": "node e2e/monkey.cjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",

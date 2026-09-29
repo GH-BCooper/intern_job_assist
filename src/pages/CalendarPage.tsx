@@ -260,7 +260,7 @@ export default function CalendarPage() {
             <input
               value={quickTitle}
               onChange={e => setQuickTitle(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && addQuick()}
+              onKeyDown={e => e.key === 'Enter' && !e.nativeEvent.isComposing && addQuick()}
               placeholder="Follow up with…"
               className="input-field mb-2"
             />

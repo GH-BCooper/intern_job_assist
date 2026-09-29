@@ -215,7 +215,7 @@ export default function CommandPalette() {
               } else if (e.key === 'ArrowUp') {
                 e.preventDefault();
                 setIndex(i => Math.max(i - 1, 0));
-              } else if (e.key === 'Enter') {
+              } else if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 if (e.metaKey || e.ctrlKey || !ordered.length || (looksLikeQuestion && !query.trim().startsWith('/'))) {
                   void askInline();

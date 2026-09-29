@@ -9,6 +9,7 @@ import {
   Cpu,
   ImagePlus,
   KeyRound,
+  History,
   Loader2,
   Mail,
   MessageSquarePlus,
@@ -107,7 +108,8 @@ export default function AssistantPanel() {
   const [showThreads, setShowThreads] = useState(false);
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const [listening, setListening] = useState(false);
-  const [speaking, setSpeaking] = useState(false);
+  /** Which reply is being read aloud, so only that one offers "Stop". */
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [compare, setCompare] = useState<{ provider: AiProviderId; text: string } | null>(null);
   const [comparing, setComparing] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
@@ -135,7 +137,9 @@ export default function AssistantPanel() {
   }, [ai.open, ai.activeThreadId]);
 
   useEffect(() => {
-    scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' });
+    // While tokens stream in this runs for every one of them; restarting a smooth
+    // scroll each time made the panel judder, so it jumps while streaming.
+    scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: ai.streaming ? 'auto' : 'smooth' });
   }, [ai.activeThread?.messages.length, ai.busy, ai.streaming]);
 
   // Dictation must not outlive the panel.
@@ -177,16 +181,17 @@ export default function AssistantPanel() {
     setListening(true);
   }, [listening, draft]);
 
-  const readAloud = useCallback((text: string) => {
+  const readAloud = useCallback((id: string, text: string) => {
     if (isSpeaking()) {
+      const wasThisOne = speakingId === id;
       stopSpeaking();
-      setSpeaking(false);
-      return;
+      setSpeakingId(null);
+      if (wasThisOne) return;
     }
-    const started = speak(text);
-    setSpeaking(started);
+    const started = speak(text, { onEnd: () => setSpeakingId(current => (current === id ? null : current)) });
+    setSpeakingId(started ? id : null);
     if (!started) toast('This browser cannot read text aloud.', 'error');
-  }, []);
+  }, [speakingId]);
 
   const addImages = useCallback(async (files: FileList | File[]) => {
     const picked = [...files].filter(file => file.type.startsWith('image/')).slice(0, 3);
@@ -278,7 +283,10 @@ export default function AssistantPanel() {
             className="fixed inset-0 z-[95] bg-light-900/20 dark:bg-black/50 backdrop-blur-[2px] animate-fade-in lg:hidden"
             onClick={() => ai.setOpen(false)}
           />
-          <aside className="fixed top-0 right-0 bottom-0 z-[100] w-full sm:w-[28rem] flex flex-col bg-light-100 dark:bg-dark-950 border-l border-light-300 dark:border-dark-800 shadow-lift animate-slide-in-right">
+          <aside
+            aria-label="Scout assistant"
+            className="fixed top-0 right-0 bottom-0 z-[100] w-full sm:w-[28rem] flex flex-col bg-light-100 dark:bg-dark-950 border-l border-light-300 dark:border-dark-800 shadow-lift animate-slide-in-right"
+          >
             {/* header */}
             <header className="flex items-center gap-2 px-4 h-14 border-b border-light-300 dark:border-dark-800 flex-shrink-0">
               <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center flex-shrink-0">
@@ -326,13 +334,19 @@ export default function AssistantPanel() {
                   </span>
                 </div>
               )}
-              <button onClick={() => setShowThreads(s => !s)} className="btn-ghost btn-icon" title="Conversations">
+              <button
+                onClick={() => setShowThreads(s => !s)}
+                className="btn-ghost btn-icon"
+                title="Conversations"
+                aria-label="Conversations"
+                aria-expanded={showThreads}
+              >
+                <History size={16} />
+              </button>
+              <button onClick={ai.newThread} className="btn-ghost btn-icon" title="New conversation" aria-label="New conversation">
                 <MessageSquarePlus size={16} />
               </button>
-              <button onClick={ai.newThread} className="btn-ghost btn-icon" title="New conversation">
-                <Wand2 size={16} />
-              </button>
-              <button onClick={() => ai.setOpen(false)} className="btn-ghost btn-icon" title="Close">
+              <button onClick={() => ai.setOpen(false)} className="btn-ghost btn-icon" title="Close" aria-label="Close assistant">
                 <X size={17} />
               </button>
             </header>
@@ -446,11 +460,11 @@ export default function AssistantPanel() {
                       <ToolTrace traces={m.toolCalls || []} />
                       {speechSupported() && m.content.length > 40 && (
                         <button
-                          onClick={() => readAloud(m.content)}
+                          onClick={() => readAloud(m.id, m.content)}
                           className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-light-500 dark:text-dark-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
                         >
-                          {speaking ? <Square size={10} /> : <Volume2 size={11} />}
-                          {speaking ? 'Stop' : 'Read aloud'}
+                          {speakingId === m.id ? <Square size={10} /> : <Volume2 size={11} />}
+                          {speakingId === m.id ? 'Stop' : 'Read aloud'}
                         </button>
                       )}
                     </div>
@@ -542,7 +556,9 @@ export default function AssistantPanel() {
                   value={draft}
                   onChange={e => setDraft(e.target.value)}
                   onKeyDown={e => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
+                    // Enter while an input method is composing (Japanese, Chinese, Korean)
+                    // confirms the candidate; it must not send the message.
+                    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                       e.preventDefault();
                       submit();
                     }

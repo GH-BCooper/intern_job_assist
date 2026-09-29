@@ -168,7 +168,7 @@ function TasksTab({ companyOf }: { companyOf: CompanyOf }) {
           value={title}
           onChange={e => setTitle(e.target.value)}
           onKeyDown={e => {
-            if (e.key === 'Enter' && title.trim()) {
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing && title.trim()) {
               addTask({ title: title.trim() });
               setTitle('');
             }
@@ -231,10 +231,30 @@ function RemindersTab({ companyOf }: { companyOf: CompanyOf }) {
   const [repeat, setRepeat] = useState<Reminder['repeat']>('none');
   const sorted = [...store.reminders].sort((a, b) => Number(a.done) - Number(b.done) || ts(a.due_at) - ts(b.due_at));
 
+  const submit = () => {
+    if (!title.trim()) return;
+    const due = new Date(when);
+    if (!when || Number.isNaN(due.getTime())) {
+      toast('Pick a date and time for the reminder.', 'error');
+      return;
+    }
+    addReminder({ title: title.trim(), due_at: due.toISOString(), repeat });
+    setTitle('');
+    toast(repeat === 'none' ? 'Reminder set.' : 'Recurring reminder set — it re-schedules itself when you complete it.', 'success');
+  };
+
   return (
     <div className="space-y-4">
       <div className="card p-3 flex flex-col sm:flex-row gap-2">
-        <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Remind me to…" className="input-field" />
+        <input
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) submit();
+          }}
+          placeholder="Remind me to…"
+          className="input-field"
+        />
         <input type="datetime-local" value={when} onChange={e => setWhen(e.target.value)} className="input-field sm:w-56" />
         <select
           value={repeat}
@@ -248,17 +268,7 @@ function RemindersTab({ companyOf }: { companyOf: CompanyOf }) {
           <option value="monthly">Every month</option>
         </select>
         <button
-          onClick={() => {
-            if (!title.trim()) return;
-            const due = new Date(when);
-            if (!when || Number.isNaN(due.getTime())) {
-              toast('Pick a date and time for the reminder.', 'error');
-              return;
-            }
-            addReminder({ title: title.trim(), due_at: due.toISOString(), repeat });
-            setTitle('');
-            toast(repeat === 'none' ? 'Reminder set.' : 'Recurring reminder set — it re-schedules itself when you complete it.', 'success');
-          }}
+          onClick={submit}
           disabled={!title.trim()}
           className="btn-primary flex-shrink-0"
         >
@@ -835,7 +845,7 @@ function TagsTab() {
           value={name}
           onChange={e => setName(e.target.value)}
           onKeyDown={e => {
-            if (e.key === 'Enter' && name.trim()) {
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing && name.trim()) {
               upsertTag(name);
               setName('');
             }
@@ -886,7 +896,13 @@ function ActivityTab({ companyOf }: { companyOf: CompanyOf }) {
   }
   return (
     <div className="card divide-y divide-light-300 dark:divide-dark-800">
-      {store.activity.slice(0, 100).map(e => (
+      {store.activity.slice(0, 100).map(e => {
+        // "Moved from Applied to Offer" says nothing on its own; name the company
+        // unless the summary already does. (This was a stub that always rendered
+        // an empty string.)
+        const company = companyOf(e.application_id);
+        const showCompany = !!company && !e.summary.toLowerCase().includes(company.toLowerCase());
+        return (
         <div key={e.id} className="flex items-center gap-3 px-4 py-2.5">
           <span
             className={`badge !text-[9px] flex-shrink-0 ${
@@ -898,12 +914,13 @@ function ActivityTab({ companyOf }: { companyOf: CompanyOf }) {
             {e.actor === 'ai' ? 'Scout' : e.actor}
           </span>
           <p className="text-sm text-light-800 dark:text-dark-100 flex-1 min-w-0 truncate">
+            {showCompany && <span className="font-semibold">{company} · </span>}
             {e.summary}
-            {companyOf(e.application_id) ? '' : ''}
           </p>
           <p className="text-[10px] text-light-500 dark:text-dark-400 flex-shrink-0">{relative(e.created_at)}</p>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

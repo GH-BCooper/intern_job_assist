@@ -31,6 +31,7 @@ import { useData } from '../context/DataContext';
 import {
   addAutomationRule,
   deleteAutomationRule,
+  mutate,
   savePreferences,
   toggleAutomationRule,
   updateAutomationRule,
@@ -42,6 +43,7 @@ import { AUTOMATION_TEMPLATES, inQuietHours, previewMatches } from '../lib/autom
 import { STAGES } from '../lib/insights';
 import { fmtDateTime, relative } from '../lib/format';
 import { toast } from '../lib/uiBus';
+import { pushUndo } from '../lib/undo';
 
 const TRIGGER_ICON: Record<string, typeof Zap> = {
   stale_no_response: Clock,
@@ -349,8 +351,15 @@ function RuleCard({ rule }: { rule: AutomationRule }) {
         </span>
         <button
           onClick={() => {
+            const snapshot = rule;
             deleteAutomationRule(rule.id);
-            toast('Automation removed.', 'info');
+            // Put the very same rule back (same id), so the record of what it has
+            // already handled still applies and it does not re-fire everything.
+            pushUndo(`Removed "${snapshot.name}".`, () => {
+              mutate(d => {
+                if (!d.automationRules.some(r => r.id === snapshot.id)) d.automationRules.unshift(snapshot);
+              });
+            });
           }}
           className="text-red-500 hover:text-red-600 flex items-center gap-1"
         >

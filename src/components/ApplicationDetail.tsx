@@ -807,7 +807,7 @@ export default function ApplicationDetail({ application: app, onClose, onEdit, o
                 value={tagInput}
                 onChange={e => setTagInput(e.target.value)}
                 onKeyDown={e => {
-                  if (e.key !== 'Enter' || !tagInput.trim()) return;
+                  if (e.key !== 'Enter' || e.nativeEvent.isComposing || !tagInput.trim()) return;
                   const tag = upsertTag(tagInput);
                   if (!appTagIds.includes(tag.id)) toggleApplicationTag(app.id, tag.id);
                   setTagInput('');
@@ -835,7 +835,7 @@ export default function ApplicationDetail({ application: app, onClose, onEdit, o
                 value={remTitle}
                 onChange={e => setRemTitle(e.target.value)}
                 onKeyDown={e => {
-                  if (e.key !== 'Enter' || !remTitle.trim()) return;
+                  if (e.key !== 'Enter' || e.nativeEvent.isComposing || !remTitle.trim()) return;
                   const due = new Date();
                   due.setDate(due.getDate() + 3);
                   due.setHours(10, 0, 0, 0);

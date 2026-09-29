@@ -44,11 +44,14 @@ export default function NetworkBanner() {
 
   if (online && !pending.length) return null;
 
+  // Both states sit above the bottom-right corner, not in it: that corner belongs to
+  // the "Ask Scout" button, which the offline pill used to cover exactly.
+
   if (!online) {
     return (
       <div
         role="status"
-        className="fixed bottom-5 right-5 z-[100] flex items-center gap-2 pl-3 pr-4 py-2.5 rounded-full bg-amber-500 text-white text-xs font-semibold shadow-lift animate-fade-in max-w-[min(92vw,22rem)]"
+        className="fixed bottom-[4.75rem] right-5 z-[100] flex items-center gap-2 pl-3 pr-4 py-2.5 rounded-full bg-amber-500 text-white text-xs font-semibold shadow-lift animate-fade-in max-w-[min(92vw,22rem)]"
       >
         <WifiOff size={14} className="flex-shrink-0" />
         {pending.length
@@ -61,7 +64,7 @@ export default function NetworkBanner() {
   return (
     <div
       role="status"
-      className="fixed bottom-5 right-5 z-[100] flex items-center gap-2 pl-3 pr-2 py-2 rounded-full bg-sky-600 text-white text-xs font-semibold shadow-lift animate-fade-in"
+      className="fixed bottom-[4.75rem] right-5 z-[100] flex items-center gap-2 pl-3 pr-2 py-2 rounded-full bg-sky-600 text-white text-xs font-semibold shadow-lift animate-fade-in"
     >
       <UploadCloud size={14} className="flex-shrink-0" />
       {pending.length} change{pending.length === 1 ? '' : 's'} waiting to sync

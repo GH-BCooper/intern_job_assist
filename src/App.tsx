@@ -23,6 +23,7 @@ import { peekUndo, runUndo } from './lib/undo';
 import { STORAGE_WARNING_EVENT } from './lib/store';
 import { toast } from './lib/uiBus';
 import LockScreen from './components/LockScreen';
+import { useStoreSelector } from './hooks/useStore';
 
 // Secondary pages load on demand — the dashboard is the only route most sessions need.
 const Insights = lazy(() => import('./pages/Insights'));
@@ -84,6 +85,12 @@ function PublicOnlyRoute({ children }: { children: ReactNode }) {
 function UiBridge() {
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
+  const locale = useStoreSelector(state => state.preferences.locale);
+  // Screen readers pick their pronunciation from this, so it has to follow the
+  // language the interface is actually in.
+  useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
   useNotificationEngine();
   useAutomationEngine();
 

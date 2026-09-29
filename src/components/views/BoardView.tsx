@@ -297,6 +297,9 @@ export default function BoardView({ applications, interviewsMap, onOpen, onAdd }
       {showKeys && (
         <div className="card p-3 mb-3 text-[11px] text-light-700 dark:text-dark-200 flex flex-wrap gap-x-5 gap-y-1.5 animate-slide-up">
           <span>
+            <span className="kbd">Tab</span> to the board first (or click a card)
+          </span>
+          <span>
             <span className="kbd">↑</span> <span className="kbd">↓</span> move within a column
           </span>
           <span>

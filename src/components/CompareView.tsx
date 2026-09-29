@@ -1,5 +1,6 @@
 import { useMemo, useRef } from 'react';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 import { Check, Minus, X } from 'lucide-react';
 import type { Application, InterviewDate } from '../lib/supabase';
 import { useStore } from '../hooks/useStore';
@@ -35,6 +36,7 @@ export default function CompareView({
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   useFocusTrap(dialogRef);
+  useEscapeKey(onClose);
   const store = useStore();
 
   const rows = useMemo<Row[]>(

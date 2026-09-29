@@ -41,10 +41,22 @@ export default function FocusMode({
   const history = useMemo(() => store.stageHistory.filter(h => h.application_id === app.id), [store.stageHistory, app.id]);
   const stage = stageOf(app, store.stageOverrides);
 
+  // The timer counts down to a deadline rather than by "one tick = one second".
+  // Prep blocks run with this tab in the background (the job description is in
+  // another one), and browsers throttle background timers to roughly one tick a
+  // minute — a decrementing counter would take far longer than 25 real minutes.
+  const secondsLeftRef = useRef(secondsLeft);
+  secondsLeftRef.current = secondsLeft;
   useEffect(() => {
     if (!running) return;
-    const id = window.setInterval(() => setSecondsLeft(s => Math.max(0, s - 1)), 1000);
-    return () => window.clearInterval(id);
+    const deadline = Date.now() + secondsLeftRef.current * 1000;
+    const tick = () => setSecondsLeft(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
+    const id = window.setInterval(tick, 500);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', tick);
+    };
   }, [running]);
 
   useEffect(() => {
@@ -255,7 +267,7 @@ export default function FocusMode({
                   value={newTask}
                   onChange={e => setNewTask(e.target.value)}
                   onKeyDown={e => {
-                    if (e.key === 'Enter') addOne();
+                    if (e.key === 'Enter' && !e.nativeEvent.isComposing) addOne();
                   }}
                   placeholder="Add a prep step…"
                   className="input-field !py-2"

@@ -7,7 +7,7 @@ defects the 280 existing tests could not, because jsdom has no layout, no focus
 model and no real timing. Everything below was fixed and has a regression test or an
 `npm run e2e` check behind it.
 
-Tests: 280 → 330+. `npm run e2e` (new) drives the signed-in app in a real browser.
+Tests: 280 → 340+. `npm run e2e` (new) drives the signed-in app in a real browser; `npm run e2e:monkey` throws random input at it.
 
 ## Data loss and correctness
 
@@ -68,3 +68,36 @@ Tests: 280 → 330+. `npm run e2e` (new) drives the signed-in app in a real brow
 - The `calendar-feed` Edge Function got the ICS folding fix in source but is **not redeployed** (`npm run setup:supabase -- sbp_token`).
 - Gemini 2.0 Flash is still the default model; the app cannot tell whether Google has retired it. A 404 now says so and points at Settings.
 - Analytics count wishlist items in "applications this week" (by date saved). Debatable rather than wrong; left as designed.
+
+## Second sweep (same day)
+
+Found by continuing the browser run at more viewport widths, reading the components
+that had no coverage, and a randomised "monkey" session (`npm run e2e:monkey`, 2,000+
+random clicks, keystrokes and form inputs, zero crashes).
+
+- **The navbar overflowed the screen below ~1,100px.** At 820 px "Automations" was cut off and
+  notifications, settings, theme and sign-out were all off-screen, and between 768 and 1,023 px
+  there was no menu button either — no way to sign out on a tablet. The menu now takes over
+  below `xl`; an e2e check asserts it fits and is reachable at five widths.
+- **The language picker did nothing.** Settings stored a locale (and advertised "Español — 60%
+  translated") but no code ever called the translator. Navbar, dashboard tiles and buttons, stage
+  names, empty states and the undo button now follow it, and `<html lang>` is set.
+- **Focus-mode timer ran slow in a background tab** (it decremented once per tick; browsers
+  throttle background timers to about one a minute). It now counts down to a deadline.
+- **Discord webhooks were rejected** (the request went out as `text/plain`) while the calendar
+  action sent JSON that Slack's missing CORS preflight blocks. One helper picks the right encoding
+  per service.
+- Activity log never said *which application* a stage move was about (a no-op stub); read-aloud
+  showed "Stop" on every message and never reset; Enter confirmed an IME candidate **and** sent the
+  message/added the item (Japanese, Chinese, Korean) in every "Enter to add" input; the assistant
+  re-started a smooth scroll on every streamed token; header icons in the assistant were swapped.
+- "Move earlier" on the first pipeline stage swapped it with the last one; a saved model that had left
+  the list was shown as the first option while requests kept using the old one; the keyboard help
+  described the old page-wide arrow keys.
+- Removing an automation was permanent (and took its history); it is now undoable with the same
+  rule id, so it does not re-fire everything.
+- Public share page kept a previous link's error after the token changed; week-in-review ended a day
+  early in the spring-forward week; comparison and week-in-review cards did not close on Escape;
+  the offline pill covered the "Ask Scout" button.
+
+Tests: 340+ unit/integration, 20 e2e checks, plus the monkey run.

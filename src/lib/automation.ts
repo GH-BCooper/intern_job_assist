@@ -367,6 +367,33 @@ export function previewMatches(
  */
 let icsBridge: AutomationBridge | null = null;
 
+/**
+ * Posts a payload to a user-supplied webhook, best effort.
+ *
+ * The right encoding depends on the service, and both wrong answers are silent:
+ * Discord rejects anything that is not `application/json`, while Slack, Zapier
+ * and Make send no CORS headers, so a JSON request (which needs a preflight) is
+ * blocked in the browser but a plain `text/plain` one goes through. The old code
+ * used text/plain for the webhook action — which Discord refused — and JSON for
+ * the calendar action, which Slack blocked.
+ */
+export function postWebhook(url: string, payload: Record<string, unknown>): Promise<unknown> {
+  let host = '';
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return Promise.resolve(); // not a URL; nothing to send to
+  }
+  const isDiscord = host === 'discord.com' || host.endsWith('.discord.com') || host === 'discordapp.com' || host.endsWith('.discordapp.com');
+  return fetch(url, {
+    method: 'POST',
+    headers: isDiscord ? { 'Content-Type': 'application/json' } : undefined,
+    body: JSON.stringify(payload),
+  }).catch(() => {
+    /* best-effort — offline or blocked webhooks must not break the app */
+  });
+}
+
 function runAction(action: AutomationAction, rule: AutomationRule, app: Application | null, ctx: Record<string, string | number>) {
   const title = interpolate(action.title, ctx) || `Automation: ${rule.name}`;
 
@@ -430,9 +457,7 @@ function runAction(action: AutomationAction, rule: AutomationRule, app: Applicat
       const url = action.webhookUrl || read().preferences.webhookUrl;
       if (!url) break;
       const content = interpolate(action.body, ctx) || title;
-      fetch(url, { method: 'POST', body: JSON.stringify({ content, text: content, rule: rule.name, ...ctx }) }).catch(() => {
-        /* best-effort — offline or blocked webhooks must not break the app */
-      });
+      void postWebhook(url, { content, text: content, rule: rule.name, ...ctx });
       break;
     }
     case 'set_stage': {
@@ -485,13 +510,7 @@ function runAction(action: AutomationAction, rule: AutomationRule, app: Applicat
       if (!events.length) break;
       const ics = buildIcs(events, `${app.company_name} — interviews`);
       if (url) {
-        fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: interpolate(action.body, ctx) || title, ics, filename: 'interview.ics' }),
-        }).catch(() => {
-          /* best-effort */
-        });
+        void postWebhook(url, { content: interpolate(action.body, ctx) || title, ics, filename: 'interview.ics' });
       }
       addNote({
         application_id: app.id,

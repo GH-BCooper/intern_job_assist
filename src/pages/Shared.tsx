@@ -28,7 +28,11 @@ export default function Shared() {
 
   useEffect(() => {
     let live = true;
+    // A previous link's result must not linger: an old error used to hide a new,
+    // perfectly good snapshot.
     setLoading(true);
+    setError('');
+    setSnapshot(null);
     fetchSharedDashboard(token)
       .then(result => {
         if (!live) return;

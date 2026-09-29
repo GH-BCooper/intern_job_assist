@@ -120,7 +120,7 @@ export function plainText(markdown: string): string {
     .trim();
 }
 
-export function speak(text: string, opts: { lang?: string; rate?: number } = {}): boolean {
+export function speak(text: string, opts: { lang?: string; rate?: number; onEnd?: () => void } = {}): boolean {
   if (!speechSupported()) return false;
   const clean = plainText(text).slice(0, 4000);
   if (!clean) return false;
@@ -129,6 +129,10 @@ export function speak(text: string, opts: { lang?: string; rate?: number } = {})
     const utterance = new SpeechSynthesisUtterance(clean);
     utterance.lang = opts.lang || navigator.language || 'en-US';
     utterance.rate = opts.rate ?? 1.02;
+    // Tell the caller when it stops, whether it finished, was cancelled or failed —
+    // without this the UI can only guess and stays on "Stop" for good.
+    utterance.onend = () => opts.onEnd?.();
+    utterance.onerror = () => opts.onEnd?.();
     window.speechSynthesis.speak(utterance);
     return true;
   } catch {

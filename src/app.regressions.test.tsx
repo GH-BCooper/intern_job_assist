@@ -347,3 +347,28 @@ describe('page titles', () => {
     expect(document.title).toBe('Settings · InternTrack');
   });
 });
+
+describe('language', () => {
+  it('switches the navbar, dashboard tiles, board columns and document language', async () => {
+    // The Settings picker stored a locale that nothing read.
+    savePreferences({ onboarded: true, locale: 'es' });
+    renderAt('/dashboard');
+    await waitForPipeline();
+
+    expect(screen.getAllByRole('link', { name: 'Panel' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('link', { name: 'Calendario' }).length).toBeGreaterThan(0);
+    expect(screen.getByText('Impulso')).toBeInTheDocument();
+    expect(screen.getAllByText('Enviada').length).toBeGreaterThan(0);
+    expect(document.documentElement.lang).toBe('es');
+    // English stays the default.
+    expect(screen.queryByText('Momentum')).not.toBeInTheDocument();
+  });
+
+  it('leaves a stage name the user chose alone', async () => {
+    savePreferences({ onboarded: true, locale: 'es', stageLabels: { Applied: 'Sent' } });
+    renderAt('/dashboard');
+    await waitForPipeline();
+    expect(screen.getAllByText('Sent').length).toBeGreaterThan(0);
+    expect(screen.queryAllByText('Enviada')).toHaveLength(0);
+  });
+});
