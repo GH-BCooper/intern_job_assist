@@ -19,7 +19,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { spawnSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
 const MIGRATIONS_DIR = path.join(ROOT, 'supabase', 'migrations');
@@ -165,23 +165,117 @@ async function verifyShareFunction(ref) {
   return { ok: res.status === 200, status: res.status };
 }
 
+/**
+ * Proves both live paths with a real row, then removes it.
+ *
+ * A reachable endpoint is not the same as a working one — the first deploy of
+ * this feed answered every request with a 500 because the new table had RLS
+ * policies but no GRANT. Writing a row and reading it back through the public
+ * surfaces is what actually catches that class of problem.
+ */
+async function verifyEndToEnd(token, ref) {
+  const anon = readEnv('VITE_SUPABASE_ANON_KEY');
+  const url = readEnv('VITE_SUPABASE_URL').replace(/\/$/, '');
+  if (!anon || !url) return null;
+
+  const probeToken = `setup-verify-${Date.now().toString(36)}`;
+  const owner = await api(token, `/v1/projects/${ref}/database/query`, {
+    method: 'POST',
+    body: JSON.stringify({ query: 'SELECT id FROM auth.users ORDER BY created_at LIMIT 1;' }),
+  });
+  const userId = Array.isArray(owner) && owner[0]?.id;
+  if (!userId) return { skipped: 'no user account exists yet to attach a test row to' };
+
+  const start = new Date(Date.now() + 86_400_000).toISOString();
+  const payload = {
+    events: [{ uid: 'verify-1', start, title: 'InternTrack setup verification', description: 'temporary' }],
+  };
+
+  const insert = `INSERT INTO public.shared_dashboards (token, user_id, scope, payload, label)
+                  VALUES ('${probeToken}', '${userId}', 'calendar', '${JSON.stringify(payload).replace(/'/g, "''")}'::jsonb, 'setup verification');`;
+  await api(token, `/v1/projects/${ref}/database/query`, { method: 'POST', body: JSON.stringify({ query: insert }) });
+
+  const result = { share: false, feed: false };
+  try {
+    const shareRes = await fetch(`${url}/rest/v1/rpc/public_shared_dashboard`, {
+      method: 'POST',
+      headers: { apikey: anon, Authorization: `Bearer ${anon}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ share_token: probeToken }),
+    });
+    const rows = shareRes.ok ? await shareRes.json() : [];
+    result.share = Array.isArray(rows) && rows.length === 1;
+
+    const feedRes = await fetch(`${url}/functions/v1/calendar-feed?token=${probeToken}`);
+    const body = feedRes.ok ? await feedRes.text() : '';
+    result.feed = body.includes('BEGIN:VEVENT') && body.includes('InternTrack setup verification');
+  } finally {
+    await api(token, `/v1/projects/${ref}/database/query`, {
+      method: 'POST',
+      body: JSON.stringify({ query: `DELETE FROM public.shared_dashboards WHERE token = '${probeToken}';` }),
+    });
+  }
+
+  return result;
+}
+
+/**
+ * Runs the Supabase CLI through npx.
+ *
+ * Windows needs a shell: since the CVE-2024-27980 hardening, Node refuses to
+ * spawn a `.cmd` shim directly and fails with EINVAL. When a shell is involved
+ * the command is passed as one string rather than an args array — Node
+ * deprecates the array form there (DEP0190) because it concatenates without
+ * escaping. Every argument below is a literal except the project ref, which
+ * `projectRef()` has already constrained to [a-z0-9], and the working directory
+ * travels as an option rather than in the command line, so there is nothing
+ * left to escape.
+ */
+function runCli(args, token) {
+  const options = {
+    cwd: ROOT,
+    env: { ...process.env, SUPABASE_ACCESS_TOKEN: token },
+    encoding: 'utf8',
+  };
+  return process.platform === 'win32'
+    ? spawnSync(`npx.cmd ${args.join(' ')}`, { ...options, shell: true })
+    : spawnSync('npx', args, options);
+}
+
 function deployFunction(token, ref) {
   console.log(`\n${colour.bold('Edge Function')}  ${colour.dim('calendar-feed')}`);
-  try {
-    const out = execFileSync(
-      process.platform === 'win32' ? 'npx.cmd' : 'npx',
-      ['--yes', 'supabase', 'functions', 'deploy', 'calendar-feed', '--project-ref', ref, '--no-verify-jwt'],
-      { cwd: ROOT, env: { ...process.env, SUPABASE_ACCESS_TOKEN: token }, encoding: 'utf8', stdio: 'pipe' },
-    );
-    console.log(`  ${colour.ok('✓')} deployed`);
-    const line = out.split('\n').find(l => /https?:\/\//.test(l));
-    if (line) console.log(`  ${colour.dim(line.trim())}`);
-    return true;
-  } catch (e) {
-    const detail = `${e.stdout || ''}${e.stderr || ''}`.trim().split('\n').slice(-4).join('\n  ');
-    console.log(`  ${colour.bad('✗')} ${colour.dim(detail || e.message)}`);
-    return false;
+
+  const base = ['--yes', 'supabase', 'functions', 'deploy', 'calendar-feed', '--project-ref', ref, '--no-verify-jwt'];
+
+  // `--use-api` bundles server-side, so a machine without Docker can still
+  // deploy. If this CLI is too old to know the flag, fall back to the plain
+  // form, which needs Docker.
+  const attempts = [
+    { args: [...base, '--use-api'], label: 'server-side bundling' },
+    { args: base, label: 'local bundling (needs Docker)' },
+  ];
+
+  let last = '';
+  for (const attempt of attempts) {
+    const result = runCli(attempt.args, token);
+    const output = `${result.stdout || ''}${result.stderr || ''}`.trim();
+
+    if (result.status === 0) {
+      console.log(`  ${colour.ok('✓')} deployed ${colour.dim(`(${attempt.label})`)}`);
+      const line = output.split('\n').find(l => /https?:\/\//.test(l));
+      if (line) console.log(`  ${colour.dim(line.trim())}`);
+      return true;
+    }
+
+    last = output || result.error?.message || `exit ${result.status}`;
+    // An unknown flag is worth retrying without it; anything else is real.
+    if (!/unknown flag|unknown shorthand|flag provided but not defined/i.test(last)) break;
   }
+
+  console.log(`  ${colour.bad('✗')} ${colour.dim(last.split('\n').slice(-5).join('\n  '))}`);
+  if (/docker/i.test(last)) {
+    console.log(`  ${colour.dim('Docker is not required — this CLI just needs --use-api, which it did not accept.')}`);
+  }
+  return false;
 }
 
 /* ----------------------------------- run ---------------------------------- */
@@ -251,10 +345,37 @@ The token is used for this run only — never written to disk, never committed.
 
   const deployed = deployFunction(token, ref);
 
+  let live = null;
+  if (deployed) {
+    console.log(`\n${colour.bold('End-to-end check')}  ${colour.dim('writes a temporary row, reads it back, deletes it')}`);
+    try {
+      live = await verifyEndToEnd(token, ref);
+      if (live?.skipped) {
+        console.log(`  ${colour.dim(`skipped — ${live.skipped}`)}`);
+      } else if (live) {
+        console.log(
+          live.share
+            ? `  ${colour.ok('✓')} a real share token reads back through the public function`
+            : `  ${colour.bad('✗')} share token did not read back`,
+        );
+        console.log(
+          live.feed
+            ? `  ${colour.ok('✓')} the calendar feed served that row as a VEVENT`
+            : `  ${colour.bad('✗')} the calendar feed did not serve the event`,
+        );
+      }
+    } catch (e) {
+      console.log(`  ${colour.bad('✗')} ${colour.dim(e.message)}`);
+    }
+  }
+
   console.log(`\n${colour.bold('Done.')}`);
   console.log(`  migrations applied this run: ${ran}`);
   console.log(`  share links: ${probe?.ok ? colour.ok('live') : colour.bad('not responding')}`);
   console.log(`  calendar feed: ${deployed ? colour.ok('deployed') : colour.bad('not deployed')}`);
+  if (live && !live.skipped) {
+    console.log(`  verified live: ${live.share && live.feed ? colour.ok('both paths') : colour.bad('see above')}`);
+  }
   if (deployed) {
     console.log(
       `\n  ${colour.dim(`Feed URL shape: ${url}/functions/v1/calendar-feed?token=<share token>`)}`,

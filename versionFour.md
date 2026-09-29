@@ -283,20 +283,23 @@ Vitest `globals`), so component tests would have stacked renders in one document
 
 ---
 
-## What still needs a human
+## Deployment status
 
-**One paste.** Everything else is done.
+**Nothing is pending.** Both Supabase steps ran against the live project on
+2026-09-29 and were verified end-to-end:
 
-The migration and the Edge Function both need a Supabase access token, which only
-the account owner can mint. Everything downstream of that token is automated:
+- `shared_dashboards`, its RLS policies, its GRANTs and `public_shared_dashboard`
+  are live — **share links work**.
+- `calendar-feed` is deployed — **the subscribable calendar works**, serving
+  `text/calendar` with a one-hour refresh hint.
+
+Re-running is safe and idempotent:
 
 ```
-1. Open  https://supabase.com/dashboard/account/tokens
-2. "Generate new token", copy it
-3. npm run setup:supabase -- sbp_your_token_here
+npm run setup:supabase -- sbp_your_token_here
 ```
 
-That script (`scripts/setup-supabase.cjs`) then, on its own:
+That script (`scripts/setup-supabase.cjs`) does, on its own:
 
 - reads the project ref out of `.env` and confirms the token can reach it;
 - applies every pending migration through the Management API's query endpoint —
@@ -305,17 +308,37 @@ That script (`scripts/setup-supabase.cjs`) then, on its own:
   treated as failures;
 - probes `public_shared_dashboard` with the anon key to prove share links are
   actually live;
-- deploys `calendar-feed` with `--no-verify-jwt` (calendar clients cannot send an
-  auth header; security is the unguessable token, as with any secret calendar
-  address);
+- deploys `calendar-feed` with `--use-api`, so **Docker is not required**, and
+  `--no-verify-jwt` (calendar clients cannot send an auth header; security is the
+  unguessable token, as with any secret calendar address);
+- **writes a real share row, reads it back through both public surfaces, and
+  deletes it** — a reachable endpoint is not the same as a working one;
 - prints exactly what landed.
 
 The token is used for that one run. It is never written to disk and never
 committed.
 
-Until it runs, share links and `/shared/:token` explain themselves in plain
-language and nothing else is affected. Nothing in v4 changed the applications,
-interview dates or learnings tables.
+Nothing in v4 changed the applications, interview dates or learnings tables.
+
+### Two bugs the live deploy exposed
+
+Both were caught because the setup script checks rather than assumes:
+
+- **`permission denied for table shared_dashboards`.** The new table had RLS
+  policies but no `GRANT`, so the feed answered every request with a 500. This is
+  precisely the trap this project hit once before — see
+  `20260605075200_grant_data_api_access.sql`, which exists for the same reason on
+  the original tables. The GRANT is now part of
+  `20260929000001_add_shared_dashboards.sql` for fresh projects, with
+  `20260929000002_grant_shared_dashboards_access.sql` covering any project that
+  already applied the first version. The end-to-end check in the setup script
+  exists so this class of failure can never pass silently again.
+- **`spawnSync npx.cmd EINVAL` on Windows.** Since the CVE-2024-27980 hardening,
+  Node refuses to spawn a `.cmd` shim directly. The CLI now runs through a shell
+  on Windows, as a single command string rather than an args array (the array
+  form there is deprecated as DEP0190 because it concatenates without escaping —
+  every argument is a literal except the project ref, which is constrained to
+  `[a-z0-9]`).
 
 ### Already handled
 

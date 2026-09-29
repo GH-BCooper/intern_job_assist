@@ -74,6 +74,19 @@ CREATE POLICY "Owners can delete their share links"
   USING (auth.uid() = user_id);
 
 /*
+  Table privileges.
+
+  Supabase's Data API needs both RLS policies *and* a GRANT; RLS alone yields
+  `permission denied for table shared_dashboards`. `anon` is deliberately given
+  nothing here — anonymous readers go through the security-definer function
+  below, never the table.
+*/
+
+GRANT SELECT, INSERT, UPDATE, DELETE
+  ON TABLE public.shared_dashboards
+  TO authenticated, service_role;
+
+/*
   The only anonymous entry point. SECURITY DEFINER so it can read past RLS,
   but it accepts exactly one token and returns exactly one payload — there is
   no way to enumerate rows through it.

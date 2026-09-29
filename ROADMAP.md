@@ -6,11 +6,10 @@
 > shipped**, including all ten items in §16 and the full UI vision. §17 stayed
 > excluded, on purpose.
 >
-> One step still needs a human, because it needs a credential this repo does not
-> hold: a Supabase access token, which unlocks both the share-link migration and
-> the calendar-feed deploy. Everything downstream of it is automated —
-> `npm run setup:supabase -- sbp_your_token`. [versionFour.md](versionFour.md)
-> maps each section below to where it landed in the code.
+> Nothing is pending. The share-link migration and the `calendar-feed` Edge
+> Function are both live on the hosted project and verified end-to-end.
+> [versionFour.md](versionFour.md) maps each section below to where it landed in
+> the code.
 >
 > The rest of this document is kept as written, as the record of the thinking.
 

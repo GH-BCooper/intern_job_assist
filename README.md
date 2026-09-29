@@ -129,20 +129,22 @@ The app will be available at `http://localhost:5173`
 - `npm run setup:supabase -- sbp_token` - Apply pending migrations and deploy the calendar feed
 - `npm run icons:extension` - Regenerate the browser extension's icons from the PWA icon
 
-### One-time Supabase setup
+### Supabase setup (already applied to the hosted project)
 
 Share links and the subscribable calendar feed need one migration and one Edge
-Function. Both are automated behind a single token:
+Function. Both are automated behind a single token, and re-running is safe:
 
 1. Open <https://supabase.com/dashboard/account/tokens> and generate a token
 2. `npm run setup:supabase -- sbp_your_token_here`
 
 It applies every pending migration through the Management API (so no database
-password is needed), verifies the share function actually responds, and deploys
-`calendar-feed`. The token is used for that run only — never written to disk.
+password is needed), deploys `calendar-feed` with `--use-api` (so Docker isn't
+needed either), then writes a real share row, reads it back through both public
+surfaces and deletes it — proving the whole path rather than assuming it. The
+token is used for that run only and is never written to disk.
 
-Everything else in the app works without this step; share links simply explain
-that they're not set up yet.
+If it hasn't been run against a given project, everything else still works;
+share links simply explain that they aren't set up yet.
 
 ## Database Schema
 
