@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { Check, Pause, Play, Plus, RotateCcw, Timer, X } from 'lucide-react';
 import type { Application, InterviewDate } from '../lib/supabase';
 import { useStore } from '../hooks/useStore';
@@ -27,6 +28,8 @@ export default function FocusMode({
   interviews: InterviewDate[];
   onClose: () => void;
 }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef);
   const store = useStore();
   const [secondsLeft, setSecondsLeft] = useState(POMODORO_MINUTES * 60);
   const [running, setRunning] = useState(false);
@@ -77,7 +80,13 @@ export default function FocusMode({
   const progress = 1 - secondsLeft / (POMODORO_MINUTES * 60);
 
   return (
-    <div className="fixed inset-0 z-[125] bg-light-200 dark:bg-dark-950 overflow-y-auto animate-fade-in" role="dialog" aria-modal="true">
+    <div
+      ref={dialogRef}
+      className="fixed inset-0 z-[125] bg-light-200 dark:bg-dark-950 overflow-y-auto animate-fade-in"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Focus mode"
+    >
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="ambient-mesh" />
       </div>

@@ -380,7 +380,7 @@ function CardsTab({
                         {card.lapses > 0 && ` · ${card.lapses} lapse${card.lapses === 1 ? '' : 's'}`}
                       </p>
                     </div>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity">
                       <button onClick={() => setEditing(card)} className="btn-ghost btn-icon !p-1" aria-label="Edit">
                         <Check size={13} />
                       </button>

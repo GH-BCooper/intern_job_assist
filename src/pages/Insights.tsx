@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -115,16 +115,23 @@ export default function Insights() {
   /**
    * Awards any newly-earned achievements.
    *
-   * Runs during render-derived memo rather than an effect because `earnBadges`
-   * is idempotent and returns only the genuinely new ids — so the celebration
-   * fires once per unlock, not once per render.
+   * This writes to the store and fires a celebration, so it belongs in an effect,
+   * not in render: doing it inside `useMemo` updated other components while
+   * Insights was still rendering. `earnBadges` is idempotent and returns only the
+   * genuinely new ids, so the celebration still fires once per unlock.
    */
-  const newlyEarned = useMemo(() => {
-    const fresh = earnBadges(badges.filter(b => b.earned).map(b => b.id));
-    if (fresh.length) celebrate();
-    return fresh;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [badges.map(b => `${b.id}:${b.earned}`).join('|')]);
+  const earnedKey = badges
+    .filter(b => b.earned)
+    .map(b => b.id)
+    .join('|');
+  const [newlyEarned, setNewlyEarned] = useState<string[]>([]);
+  useEffect(() => {
+    if (!earnedKey) return;
+    const fresh = earnBadges(earnedKey.split('|'));
+    if (!fresh.length) return;
+    celebrate();
+    setNewlyEarned(prev => Array.from(new Set([...prev, ...fresh])));
+  }, [earnedKey]);
 
   /** Renders the headline block to a PNG for sharing. */
   const shareSnapshot = async () => {

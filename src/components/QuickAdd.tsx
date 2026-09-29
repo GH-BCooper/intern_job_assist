@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { ClipboardPaste, Loader2, Sparkles, X } from 'lucide-react';
 import { useAI } from '../context/AIContext';
 import { useData } from '../context/DataContext';
@@ -13,6 +14,8 @@ import { emitDeferrable, toast } from '../lib/uiBus';
  * nothing is written on the model's word alone.
  */
 export default function QuickAdd({ initialText = '', onClose }: { initialText?: string; onClose: () => void }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef);
   const { quickAddFromText, configured, providerLabel } = useAI();
   const { applications } = useData();
   const [text, setText] = useState(initialText);
@@ -70,6 +73,7 @@ export default function QuickAdd({ initialText = '', onClose }: { initialText?: 
 
   return (
     <div
+      ref={dialogRef}
       className="fixed inset-0 z-[130] bg-black/50 backdrop-blur-sm flex items-start justify-center p-4 pt-[8vh] animate-fade-in"
       onClick={onClose}
       role="dialog"

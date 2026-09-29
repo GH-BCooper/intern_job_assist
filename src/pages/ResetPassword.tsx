@@ -1,6 +1,7 @@
 import { useState, FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { usePageTitle } from '../hooks/usePageTitle';
 import { Sparkles, Loader2, ArrowLeft, KeyRound, Check } from 'lucide-react';
 import OtpInput from '../components/ui/OtpInput';
 import PasswordStrengthMeter from '../components/ui/PasswordStrengthMeter';
@@ -23,6 +24,7 @@ function Logo() {
 type Mode = 'request' | 'verify' | 'done';
 
 export default function ResetPassword() {
+  usePageTitle('Reset password');
   const { requestPasswordReset, verifyPasswordResetOtp, resendPasswordResetOtp, setNewPassword } = useAuth();
   const navigate = useNavigate();
 

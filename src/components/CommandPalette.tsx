@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
@@ -48,9 +49,14 @@ export default function CommandPalette() {
   const ai = useAI();
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, open);
   /** Spotlight-style inline answer, when the query reads as a question. */
   const [answer, setAnswer] = useState<{ question: string; text: string } | null>(null);
   const [asking, setAsking] = useState(false);
+
+  const openRef = useRef(open);
+  openRef.current = open;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -58,10 +64,15 @@ export default function CommandPalette() {
         e.preventDefault();
         setOpen(o => !o);
       }
-      if (e.key === 'Escape') setOpen(false);
+      // Listening in the capture phase and consuming Escape means it closes only
+      // the palette, not also the application panel it was opened over.
+      if (e.key === 'Escape' && openRef.current) {
+        e.stopPropagation();
+        setOpen(false);
+      }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, []);
 
   useEffect(() => onUi(e => e.type === 'open-palette' && setOpen(true)), []);
@@ -182,7 +193,13 @@ export default function CommandPalette() {
   let flat = 0;
 
   return (
-    <div className="fixed inset-0 z-[110] flex items-start justify-center pt-[12vh] px-4 animate-fade-in">
+    <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Command palette"
+      className="fixed inset-0 z-[110] flex items-start justify-center pt-[12vh] px-4 animate-fade-in"
+    >
       <div className="absolute inset-0 bg-light-900/25 dark:bg-black/60 backdrop-blur-sm" onClick={() => setOpen(false)} />
       <div className="relative w-full max-w-xl card !bg-light-100 dark:!bg-dark-950 shadow-lift overflow-hidden animate-scale-in">
         <div className="flex items-center gap-2.5 px-4 h-14 border-b border-light-300 dark:border-dark-800">
@@ -208,6 +225,7 @@ export default function CommandPalette() {
               }
             }}
             placeholder="Search applications, jump to a page, run a command…"
+            aria-label="Search applications, pages and commands"
             className="flex-1 bg-transparent text-sm text-light-900 dark:text-white placeholder-light-500 dark:placeholder-dark-500 focus:outline-none"
           />
           <span className="kbd">esc</span>

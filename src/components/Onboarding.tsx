@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { ArrowRight, Check, KeyRound, Palette, Sparkles, Target, X } from 'lucide-react';
 import AccentPicker from './ui/AccentPicker';
 import { PROVIDERS } from '../lib/ai/providers';
@@ -18,6 +19,8 @@ const ORDER: StepId[] = ['welcome', 'accent', 'ai', 'goal', 'done'];
  * feel like yours discoverable, not to gate the app behind a wizard.
  */
 export default function Onboarding({ onClose }: { onClose: () => void }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef);
   const prefs = usePreferences();
   const [step, setStep] = useState<StepId>('welcome');
   const [provider, setProvider] = useState<AiProviderId>(prefs.aiProvider);
@@ -51,6 +54,7 @@ export default function Onboarding({ onClose }: { onClose: () => void }) {
 
   return (
     <div
+      ref={dialogRef}
       className="fixed inset-0 z-[140] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in"
       role="dialog"
       aria-modal="true"

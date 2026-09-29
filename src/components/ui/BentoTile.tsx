@@ -19,7 +19,7 @@ export default function BentoTile({
 }: {
   label?: string;
   icon?: LucideIcon;
-  span?: 'normal' | 'wide' | 'tall' | 'wide-tall';
+  span?: 'normal' | 'wide' | 'full' | 'tall' | 'wide-tall';
   /** Warms the tile with the accent gradient — for the one hero tile only. */
   accent?: boolean;
   onClick?: () => void;
@@ -30,7 +30,9 @@ export default function BentoTile({
   const spanClass =
     span === 'wide'
       ? 'bento-wide'
-      : span === 'tall'
+      : span === 'full'
+        ? 'bento-full'
+        : span === 'tall'
         ? 'bento-tall'
         : span === 'wide-tall'
           ? 'bento-wide bento-tall'
@@ -73,7 +75,7 @@ export function StatTile({
   tone?: string;
   hint?: string;
   onClick?: () => void;
-  span?: 'normal' | 'wide' | 'tall' | 'wide-tall';
+  span?: 'normal' | 'wide' | 'full' | 'tall' | 'wide-tall';
 }) {
   return (
     <BentoTile label={label} icon={icon} onClick={onClick} span={span}>

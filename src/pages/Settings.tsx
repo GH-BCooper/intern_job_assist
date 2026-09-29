@@ -31,6 +31,7 @@ import {
   Volume2,
   Zap,
 } from 'lucide-react';
+import Switch from '../components/ui/Switch';
 import PageShell from '../components/PageShell';
 import AccountSecurity from '../components/AccountSecurity';
 import { useStore } from '../hooks/useStore';
@@ -57,6 +58,7 @@ import { ACCENT_BY_ID } from '../lib/accent';
 import { STAGES, computeAnalytics, weeklyWrapped } from '../lib/insights';
 import { buildImportPlan, PRESETS, type ImportPreset } from '../lib/importPresets';
 import { bookmarkletCode } from '../lib/bookmarklet';
+import { copyText } from '../lib/clipboard';
 import { buildLeaveBehindHtml, buildPortfolioHtml, downloadHtml, printHtml } from '../lib/portfolio';
 import { previewSound } from '../lib/fx';
 import { LOCALES, coverage } from '../lib/i18n';
@@ -115,21 +117,7 @@ function Toggle({ on, onChange, label, hint }: { on: boolean; onChange: (v: bool
         <span className="block text-sm font-medium text-light-900 dark:text-white">{label}</span>
         {hint && <span className="block text-xs text-light-500 dark:text-dark-400 mt-0.5 leading-snug">{hint}</span>}
       </span>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={on}
-        onClick={() => onChange(!on)}
-        className={`relative w-10 h-[22px] rounded-full flex-shrink-0 transition-colors mt-0.5 ${
-          on ? 'bg-gradient-to-r from-primary-500 to-accent-500' : 'bg-light-300 dark:bg-dark-700'
-        }`}
-      >
-        <span
-          className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-transform ${
-            on ? 'translate-x-[21px]' : 'translate-x-[3px]'
-          }`}
-        />
-      </button>
+      <Switch checked={on} onChange={onChange} label={label} className="mt-0.5" />
     </label>
   );
 }
@@ -162,6 +150,7 @@ export default function Settings() {
   const [mfaEnroll, setMfaEnroll] = useState<{ id: string; qr: string; secret: string } | null>(null);
   const [mfaCode, setMfaCode] = useState('');
   const [bookmarkletCopied, setBookmarkletCopied] = useState(false);
+  const bookmarklet = useMemo(() => bookmarkletCode(), []);
 
   const analytics = useMemo(
     () => computeAnalytics(applications, interviewsMap, store, prefs.followUpDays),
@@ -215,8 +204,13 @@ export default function Settings() {
       const link = await createShareLink(user.id, payload, { label: 'Insights snapshot', expiresInDays: 90 });
       setShareLinks(prev => [link, ...(prev || [])]);
       setShareError('');
-      await navigator.clipboard.writeText(shareUrl(link.token)).catch(() => undefined);
-      toast('Share link created and copied. It shows aggregate insights only.', 'success');
+      const copied = await copyText(shareUrl(link.token));
+      toast(
+        copied
+          ? 'Share link created and copied. It shows aggregate insights only.'
+          : 'Share link created — copy it from the list below. It shows aggregate insights only.',
+        'success',
+      );
     } catch (e) {
       const message =
         e instanceof ShareUnavailableError ? e.message : e instanceof Error ? e.message : 'Could not create the link.';
@@ -695,7 +689,7 @@ export default function Settings() {
                   {season.name}
                   <button
                     onClick={() => deleteSeason(season.id)}
-                    className="opacity-0 group-hover:opacity-100 text-light-400 hover:text-red-500 transition-opacity"
+                    className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100 text-light-400 hover:text-red-500 transition-opacity"
                     aria-label={`Delete ${season.name}`}
                   >
                     <Trash2 size={10} />
@@ -847,7 +841,9 @@ export default function Settings() {
           </p>
           <div className="flex items-center gap-2 flex-wrap">
             <a
-              href={bookmarkletCode()}
+              // Set on the DOM node, not as a prop: React warns about `javascript:`
+              // hrefs and a future version blocks them outright.
+              ref={el => el?.setAttribute('href', bookmarklet)}
               onClick={e => e.preventDefault()}
               draggable
               className="btn-primary btn-sm cursor-grab active:cursor-grabbing"
@@ -857,7 +853,10 @@ export default function Settings() {
             </a>
             <button
               onClick={async () => {
-                await navigator.clipboard.writeText(bookmarkletCode());
+                if (!(await copyText(bookmarklet))) {
+                  toast('Could not copy — drag the button to your bookmarks bar instead.', 'error');
+                  return;
+                }
                 setBookmarkletCopied(true);
                 setTimeout(() => setBookmarkletCopied(false), 2000);
               }}
@@ -935,7 +934,10 @@ export default function Settings() {
                   ) : (
                     <>
                       <button
-                        onClick={() => void navigator.clipboard.writeText(shareUrl(link.token))}
+                        onClick={async () => {
+                          const ok = await copyText(shareUrl(link.token));
+                          toast(ok ? 'Link copied.' : 'Could not copy the link.', ok ? 'success' : 'error');
+                        }}
                         className="btn-ghost btn-icon !p-1"
                         aria-label="Copy link"
                       >
@@ -1167,7 +1169,7 @@ export default function Settings() {
         <Section
           icon={Database}
           title="Your data"
-          description="Applications live in Supabase. Everything v2 adds — tags, reminders, notes, contacts, goals — is stored in this browser and exports cleanly."
+          description="Applications live in Supabase. Everything added since — tags, reminders, notes, contacts, goals, automations, prep cards — is stored in this browser and exports cleanly."
         >
           <div className="grid sm:grid-cols-2 gap-2">
             <button onClick={() => downloadText('interntrack-workspace.json', exportStore(), 'application/json')} className="btn-secondary">

@@ -157,8 +157,11 @@ export default function BoardView({ applications, interviewsMap, onOpen, onAdd }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
-      if (target && /input|textarea|select/i.test(target.tagName)) return;
+      if (target && (target.isContentEditable || /input|textarea|select/i.test(target.tagName))) return;
       if (e.metaKey || e.ctrlKey) return;
+      // A modal owns the keyboard. Without this, digits pressed in the detail
+      // panel moved the card behind it, and Enter re-opened it.
+      if (document.querySelector('[aria-modal="true"]')) return;
 
       if (e.key === '?') {
         e.preventDefault();
@@ -167,6 +170,11 @@ export default function BoardView({ applications, interviewsMap, onOpen, onAdd }
       }
 
       if (!flat.length) return;
+
+      // The board only takes the keyboard once it has focus (tab to it, or click a
+      // card). Claiming arrows and digits page-wide meant the dashboard could no
+      // longer be scrolled with the arrow keys, and stray digits moved cards.
+      if (!boardRef.current || !boardRef.current.contains(document.activeElement)) return;
 
       // Pick up the first card when nothing is focused yet.
       if (!focused) {
@@ -220,6 +228,8 @@ export default function BoardView({ applications, interviewsMap, onOpen, onAdd }
           break;
         }
         case 'Enter':
+          // On a focused button or link, Enter already means "press it".
+          if (target?.closest('button, a, [role="button"], summary')) return;
           e.preventDefault();
           onOpen(focused.app);
           break;
@@ -272,7 +282,12 @@ export default function BoardView({ applications, interviewsMap, onOpen, onAdd }
         </div>
       )}
 
-      <div ref={boardRef} className="flex gap-3 overflow-x-auto pb-4 -mx-1 px-1 snap-x">
+      <div
+        ref={boardRef}
+        tabIndex={0}
+        aria-label="Pipeline board. Use the arrow keys to move between cards."
+        className="flex gap-3 overflow-x-auto pb-4 -mx-1 px-1 snap-x rounded-2xl"
+      >
         {columns.map(({ stage, items }) => {
           const limit = wipLimit(stage, store.preferences);
           const overLimit = limit > 0 && items.length > limit;
@@ -283,9 +298,15 @@ export default function BoardView({ applications, interviewsMap, onOpen, onAdd }
               key={stage}
               onDragOver={e => {
                 e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
                 setOverStage(stage);
               }}
-              onDragLeave={() => setOverStage(s => (s === stage ? null : s))}
+              onDragLeave={e => {
+                // Moving over a child fires dragleave on the column; only clear the
+                // highlight when the pointer really left it.
+                if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+                setOverStage(s => (s === stage ? null : s));
+              }}
               onDrop={() => void drop(stage)}
               aria-label={`${stageLabel(stage, store.preferences)}, ${items.length} applications`}
               className={`flex-shrink-0 w-[19rem] snap-start rounded-2xl border transition-colors ${
@@ -353,7 +374,12 @@ export default function BoardView({ applications, interviewsMap, onOpen, onAdd }
                           <div
                             key={app.id}
                             draggable
-                            onDragStart={() => setDragId(app.id)}
+                            onDragStart={e => {
+                              // Firefox will not start a drag unless data is set.
+                              e.dataTransfer.setData('text/plain', app.id);
+                              e.dataTransfer.effectAllowed = 'move';
+                              setDragId(app.id);
+                            }}
                             onDragEnd={() => {
                               setDragId(null);
                               setOverStage(null);

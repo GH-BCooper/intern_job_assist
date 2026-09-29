@@ -1,23 +1,27 @@
 import { useState, useEffect, FormEvent, useRef } from "react";
 import { X, Loader2, Upload, FileUp, Trash2, Plus } from "lucide-react";
-import { toDateInput } from "../lib/format";
+import { toDateInput, toLocalInput } from "../lib/format";
 import type {
   Application,
   ApplicationInsert,
-  InterviewDateInsert,
+  InterviewDate,
   InterviewLearning,
   ApplicationFiles,
 } from "../lib/supabase";
+import type { InterviewDraft } from "../context/DataContext";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 type Props = {
   onClose: () => void;
   onSave: (
     data: ApplicationInsert,
-    interviews: InterviewDateInsert[],
+    interviews: InterviewDraft[],
     learnings?: InterviewLearning,
     files?: ApplicationFiles,
   ) => Promise<void>;
   initial?: Application | null;
+  /** The application's existing interview dates, so editing it does not wipe them. */
+  interviewDates?: InterviewDate[];
   learnings?: InterviewLearning | null;
   /** Applied only when creating — lets the assistant open a part-filled form. */
   prefill?: Partial<ApplicationInsert> | null;
@@ -50,60 +54,132 @@ const EMPTY: ApplicationInsert = {
   platform_applied_on: "",
 };
 
-type InterviewInput = InterviewDateInsert & { tempId?: string };
+/** One editable interview row. `id` is set for rows that already exist. */
+type InterviewInput = {
+  id?: string;
+  application_id: string;
+  /** A `datetime-local` value, so the time of day is kept and not just the date. */
+  interview_date: string;
+  label: string;
+  tempId: string;
+  /** The stored timestamp for an existing row, kept so an untouched row is saved untouched. */
+  stored?: string;
+};
+
+const formFrom = (initial?: Application | null, prefill?: Partial<ApplicationInsert> | null): ApplicationInsert => {
+  if (initial) {
+    return {
+      company_name: initial.company_name,
+      role_applied_to: initial.role_applied_to,
+      company_description: initial.company_description,
+      resume_used: initial.resume_used,
+      cover_letter_used: initial.cover_letter_used,
+      response_status: initial.response_status,
+      interview_offered: initial.interview_offered,
+      final_status: initial.final_status,
+      date_applied: initial.date_applied,
+      salary_info: initial.salary_info,
+      interview_questions: initial.interview_questions,
+      tasks_to_complete: initial.tasks_to_complete,
+      resume_path: initial.resume_path,
+      cover_letter_path: initial.cover_letter_path,
+      platform_applied_on: initial.platform_applied_on,
+    };
+  }
+  if (prefill) return { ...EMPTY, date_applied: toDateInput(), ...prefill };
+  return EMPTY;
+};
+
+let tempCounter = 0;
+const nextTempId = () => `iv-${(tempCounter += 1)}`;
+
+/** Row snapshot without the throwaway key, for comparing against the opening state. */
+const snapshot = (
+  form: ApplicationInsert,
+  interviews: InterviewInput[],
+  learnings: { learnings_text: string; questions_asked: string },
+) =>
+  JSON.stringify({
+    form,
+    interviews: interviews.map(({ id, interview_date, label }) => ({ id, interview_date, label })),
+    learnings,
+  });
 
 export default function ApplicationForm({
   onClose,
   onSave,
   initial,
+  interviewDates,
   learnings: initialLearnings,
   prefill,
 }: Props) {
-  const [form, setForm] = useState<ApplicationInsert>(EMPTY);
-  const [interviews, setInterviews] = useState<InterviewInput[]>([]);
-  const [learnings, setLearnings] = useState({
-    learnings_text: "",
-    questions_asked: "",
-  });
+  // State is seeded once, from props, when the form opens. It used to be filled by
+  // an effect keyed on the props, which re-ran (and wiped whatever had been typed)
+  // whenever a parent re-render handed down a fresh object or the learnings
+  // arrived late.
+  const [form, setForm] = useState<ApplicationInsert>(() => formFrom(initial, prefill));
+  const [interviews, setInterviews] = useState<InterviewInput[]>(() =>
+    (interviewDates || []).map((iv) => ({
+      id: iv.id,
+      application_id: iv.application_id,
+      interview_date: toLocalInput(iv.interview_date),
+      label: iv.label,
+      tempId: nextTempId(),
+      stored: iv.interview_date,
+    })),
+  );
+  const [learnings, setLearnings] = useState(() => ({
+    learnings_text: initialLearnings?.learnings || "",
+    questions_asked: initialLearnings?.questions_asked || "",
+  }));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [coverLetterFile, setCoverLetterFile] = useState<File | null>(null);
   const fileRefResume = useRef<HTMLInputElement>(null);
   const fileRefCoverLetter = useRef<HTMLInputElement>(null);
+  const firstFieldRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef);
+
+  // What the form looked like on open, to tell "closed untouched" from "about to
+  // throw away typing".
+  const baseline = useRef(snapshot(form, interviews, learnings));
+  const isDirty = () =>
+    !!resumeFile || !!coverLetterFile || snapshot(form, interviews, learnings) !== baseline.current;
+
+  const requestClose = () => {
+    if (saving) return;
+    if (isDirty() && !window.confirm("Discard your changes?")) return;
+    onClose();
+  };
+  const requestCloseRef = useRef(requestClose);
+  requestCloseRef.current = requestClose;
 
   useEffect(() => {
-    if (initial) {
-      setForm({
-        company_name: initial.company_name,
-        role_applied_to: initial.role_applied_to,
-        company_description: initial.company_description,
-        resume_used: initial.resume_used,
-        cover_letter_used: initial.cover_letter_used,
-        response_status: initial.response_status,
-        interview_offered: initial.interview_offered,
-        final_status: initial.final_status,
-        date_applied: initial.date_applied,
-        salary_info: initial.salary_info,
-        interview_questions: initial.interview_questions,
-        tasks_to_complete: initial.tasks_to_complete,
-        resume_path: initial.resume_path,
-        cover_letter_path: initial.cover_letter_path,
-        platform_applied_on: initial.platform_applied_on,
-      });
-      setInterviews([]);
-    } else if (prefill) {
-      setForm({ ...EMPTY, date_applied: toDateInput(), ...prefill });
-    }
-    if (initialLearnings) {
-      setLearnings({
-        learnings_text: initialLearnings.learnings || "",
-        questions_asked: initialLearnings.questions_asked || "",
-      });
-    } else if (!initial) {
-      setLearnings({ learnings_text: "", questions_asked: "" });
-    }
-  }, [initial, initialLearnings, prefill]);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        requestCloseRef.current();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    firstFieldRef.current?.focus();
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Learnings are fetched after the form opens; fill them in only if the user has
+  // not started typing there.
+  useEffect(() => {
+    if (!initialLearnings) return;
+    const loaded = {
+      learnings_text: initialLearnings.learnings || "",
+      questions_asked: initialLearnings.questions_asked || "",
+    };
+    setLearnings((prev) => (prev.learnings_text || prev.questions_asked ? prev : loaded));
+    baseline.current = snapshot(form, interviews, loaded);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialLearnings?.id]);
 
   const set = (
     key: keyof ApplicationInsert,
@@ -137,7 +213,11 @@ export default function ApplicationForm({
           setSaving(true);
           const { extractTextFromFile } = await import("../utils/pdfUtils");
           const text = await extractTextFromFile(file);
-          set(fieldKey, text);
+          // Add to what is there rather than silently replacing it.
+          setForm((prev) => {
+            const existing = String(prev[fieldKey] ?? "").trim();
+            return { ...prev, [fieldKey]: existing ? existing + "\n\n" + text : text };
+          });
         } catch {
           setError("Failed to extract text from file.");
         } finally {
@@ -155,18 +235,18 @@ export default function ApplicationForm({
         application_id: initial?.id || "",
         interview_date: "",
         label: `Round ${prev.length + 1}`,
-        tempId: Math.random().toString(),
+        tempId: nextTempId(),
       },
     ]);
   };
 
-  const removeInterview = (tempId?: string) => {
+  const removeInterview = (tempId: string) => {
     setInterviews((prev) => prev.filter((iv) => iv.tempId !== tempId));
   };
 
   const setInterview = (
-    tempId: string | undefined,
-    key: string,
+    tempId: string,
+    key: "label" | "interview_date",
     value: string,
   ) => {
     setInterviews((prev) =>
@@ -180,15 +260,29 @@ export default function ApplicationForm({
       setError("Company name is required.");
       return;
     }
+    // The rows are only visible while "Interview Offered" is on, so they only
+    // count then. A row with no date cannot be stored, so ask for one rather than
+    // letting the write fail after the application itself has saved.
+    const activeInterviews = form.interview_offered ? interviews : [];
+    if (activeInterviews.some((iv) => !iv.interview_date)) {
+      setError("Give every interview a date, or remove the empty row.");
+      return;
+    }
     setError("");
     setSaving(true);
 
     try {
-      const finalForm = { ...form };
-      const finalInterviews = interviews.map((iv) => ({
+      const finalForm = { ...form, company_name: form.company_name.trim() };
+      const finalInterviews: InterviewDraft[] = activeInterviews.map((iv) => ({
+        ...(iv.id ? { id: iv.id } : {}),
         application_id: iv.application_id,
-        interview_date: iv.interview_date,
-        label: iv.label,
+        // The input only holds minutes; an untouched row keeps its exact stored
+        // timestamp instead of being rewritten with the seconds cut off.
+        interview_date:
+          iv.stored && toLocalInput(iv.stored) === iv.interview_date
+            ? iv.stored
+            : new Date(iv.interview_date).toISOString(),
+        label: iv.label.trim() || "Interview",
       }));
 
       const finalLearnings: InterviewLearning = {
@@ -214,10 +308,16 @@ export default function ApplicationForm({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div
+      ref={dialogRef}
+      className="fixed inset-0 z-[108] flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label={initial ? "Edit application" : "New application"}
+    >
       <div
         className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-        onClick={onClose}
+        onClick={requestClose}
       />
       <div className="relative w-full max-w-2xl bg-light-100 dark:bg-dark-800 border border-light-300 dark:border-dark-600 rounded-2xl shadow-2xl max-h-[90vh] flex flex-col transition-colors">
         {/* Header */}
@@ -226,7 +326,9 @@ export default function ApplicationForm({
             {initial ? "Edit Application" : "New Application"}
           </h2>
           <button
-            onClick={onClose}
+            type="button"
+            onClick={requestClose}
+            aria-label="Close"
             className="text-light-600 dark:text-dark-400 hover:text-light-900 dark:hover:text-white transition-colors p-1 rounded"
           >
             <X size={20} />
@@ -240,10 +342,13 @@ export default function ApplicationForm({
         >
           {/* Company Name */}
           <div>
-            <label className="block text-xs font-medium text-light-600 dark:text-dark-400 mb-1.5">
+            <label htmlFor="app-company" className="block text-xs font-medium text-light-600 dark:text-dark-400 mb-1.5">
               Company Name <span className="text-red-500">*</span>
             </label>
             <input
+              id="app-company"
+              ref={firstFieldRef}
+              maxLength={200}
               className="input-field"
               placeholder="e.g. Google, Microsoft…"
               value={form.company_name}
@@ -467,7 +572,8 @@ export default function ApplicationForm({
                 <div key={iv.tempId} className="flex gap-2">
                   <input
                     type="text"
-                    className="input-field w-24"
+                    aria-label="Interview label"
+                    className="input-field w-28"
                     placeholder="Round 1"
                     value={iv.label}
                     onChange={(e) =>
@@ -475,7 +581,8 @@ export default function ApplicationForm({
                     }
                   />
                   <input
-                    type="date"
+                    type="datetime-local"
+                    aria-label={(iv.label || "Interview") + " date and time"}
                     className="input-field flex-1"
                     value={iv.interview_date}
                     onChange={(e) =>
@@ -485,6 +592,7 @@ export default function ApplicationForm({
                   <button
                     type="button"
                     onClick={() => removeInterview(iv.tempId)}
+                    aria-label="Remove interview"
                     className="btn-danger"
                   >
                     <Trash2 size={14} />
@@ -620,7 +728,7 @@ export default function ApplicationForm({
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-light-300 dark:border-dark-600 flex-shrink-0">
-          <button type="button" onClick={onClose} className="btn-secondary">
+          <button type="button" onClick={requestClose} className="btn-secondary">
             Cancel
           </button>
           <button

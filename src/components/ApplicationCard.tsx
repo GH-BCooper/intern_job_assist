@@ -86,6 +86,8 @@ export default function ApplicationCard({ application: app, interviews = [], onC
       tabIndex={0}
       onClick={onClick}
       onKeyDown={e => {
+        // Keys pressed on the star button bubble up here; they belong to the button.
+        if (e.target !== e.currentTarget) return;
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           onClick();
@@ -99,7 +101,10 @@ export default function ApplicationCard({ application: app, interviews = [], onC
           toggleStar(app.id);
         }}
         className={`absolute top-3 right-3 transition-all ${
-          starred ? 'text-primary-500' : 'text-light-400 dark:text-dark-600 opacity-0 group-hover:opacity-100 hover:text-primary-500'
+          starred
+            ? 'text-primary-500'
+            : // Hover-only would hide it from keyboards and touch screens.
+              'text-light-400 dark:text-dark-600 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100 hover:text-primary-500'
         }`}
         aria-label={starred ? 'Unstar' : 'Star'}
       >

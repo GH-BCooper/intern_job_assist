@@ -51,6 +51,7 @@ import {
   type Reminder,
 } from '../lib/store';
 import { emitUi, toast } from '../lib/uiBus';
+import { copyText } from '../lib/clipboard';
 import { daysSince, fmtDateTime, relative, toLocalInput, ts } from '../lib/format';
 import Markdown from '../components/ui/Markdown';
 import { useAuth } from '../context/AuthContext';
@@ -784,9 +785,9 @@ function LettersTab() {
                   {filled && (
                     <>
                       <button
-                        onClick={() => {
-                          void navigator.clipboard.writeText(filled);
-                          toast('Filled letter copied.', 'success');
+                        onClick={async () => {
+                          const ok = await copyText(filled);
+                          toast(ok ? 'Filled letter copied.' : 'Could not copy — select the text and copy it by hand.', ok ? 'success' : 'error');
                         }}
                         className="btn-secondary btn-sm"
                       >

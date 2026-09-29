@@ -1,8 +1,28 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { setStoreScope } from '../lib/store';
 
 type Result = { error: string | null };
+
+/**
+ * True when nothing a consumer could care about differs between two users.
+ *
+ * Supabase hands over a brand-new `User` object on every auth event (token
+ * refresh, tab refocus, cross-tab sync). Keeping the previous reference when the
+ * identity is unchanged stops every context and effect keyed on `user` from
+ * re-running, which used to refetch the whole pipeline and flash the board.
+ */
+function sameUser(a: User | null, b: User | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.id === b.id &&
+    a.email === b.email &&
+    a.updated_at === b.updated_at &&
+    JSON.stringify(a.user_metadata ?? {}) === JSON.stringify(b.user_metadata ?? {})
+  );
+}
 
 function mapError(message: string): string {
   const m = message.toLowerCase();
@@ -67,30 +87,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
+  /** Adopts a user without replacing an identical one (see `sameUser`). */
+  const adoptUser = useCallback((next: User | null) => setUser(prev => (sameUser(prev, next) ? prev : next)), []);
+
   useEffect(() => {
     const timeout = setTimeout(() => setLoading(false), 8000);
 
+    const apply = (next: Session | null) => {
+      // Scope the per-user store *before* any screen for this user renders.
+      // Doing it later, in an effect, let the first render read the anonymous
+      // store — so a returning user briefly looked like a first-time one and got
+      // the onboarding wizard again.
+      setStoreScope(next?.user?.id);
+      setSession(prev => (prev && next && prev.access_token === next.access_token ? prev : next));
+      adoptUser(next?.user ?? null);
+      setLoading(false);
+    };
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       clearTimeout(timeout);
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
+      apply(session);
     }).catch(() => {
       clearTimeout(timeout);
       setLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => apply(session));
 
     return () => {
       clearTimeout(timeout);
       subscription.unsubscribe();
     };
-  }, []);
+  }, [adoptUser]);
 
   const signUp = async (email: string, password: string, name: string): Promise<Result & { sessionCreated: boolean }> => {
     const { data, error } = await supabase.auth.signUp({
@@ -179,7 +207,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { error } = await supabase.auth.verifyOtp({ email, token, type: 'email_change' });
     if (error) return { error: mapError(error.message) };
     const { data } = await supabase.auth.getUser();
-    if (data.user) setUser(data.user);
+    if (data.user) adoptUser(data.user);
     return { error: null };
   };
 
@@ -216,7 +244,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const updateDisplayName = async (name: string): Promise<Result> => {
     const { data, error } = await supabase.auth.updateUser({ data: { name } });
     if (error) return { error: mapError(error.message) };
-    if (data.user) setUser(data.user);
+    if (data.user) adoptUser(data.user);
     return { error: null };
   };
 

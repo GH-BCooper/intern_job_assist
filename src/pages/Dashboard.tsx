@@ -30,10 +30,10 @@ import {
   Trophy,
   X,
 } from 'lucide-react';
-import { useData } from '../context/DataContext';
+import { useData, type InterviewDraft } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import { useStore } from '../hooks/useStore';
-import type { Application, ApplicationInsert, InterviewDateInsert, InterviewLearning } from '../lib/supabase';
+import type { Application, ApplicationInsert, InterviewLearning } from '../lib/supabase';
 import {
   computeAnalytics,
   orderedStages,
@@ -423,7 +423,7 @@ export default function Dashboard() {
 
   const handleSave = async (
     data: ApplicationInsert,
-    interviews: InterviewDateInsert[],
+    interviews: InterviewDraft[],
     learnings?: InterviewLearning,
     files?: { resumeFile?: File | null; coverLetterFile?: File | null },
   ) => {
@@ -573,7 +573,7 @@ export default function Dashboard() {
           }
         />
 
-        <BentoTile label="This week" icon={Flame} onClick={() => setShowWrapped(true)}>
+        <BentoTile label="This week" icon={Flame} span="wide" onClick={() => setShowWrapped(true)}>
           <p className="text-3xl font-bold tabular-nums leading-none text-light-900 dark:text-white animate-count-up">
             {analytics.thisWeek}
           </p>
@@ -590,12 +590,12 @@ export default function Dashboard() {
         </BentoTile>
 
         {analytics.total === 0 ? (
-          <BentoTile label="Tip of the day" icon={Lightbulb} span="wide">
+          <BentoTile label="Tip of the day" icon={Lightbulb} span="full">
             <p className="text-xs text-light-700 dark:text-dark-200 leading-relaxed">{tip.tip}</p>
             <p className="text-[10px] uppercase tracking-wide text-light-500 dark:text-dark-400 mt-1.5">{tip.source}</p>
           </BentoTile>
         ) : (
-          <BentoTile label="Pipeline" icon={Columns3} span="wide">
+          <BentoTile label="Pipeline" icon={Columns3} span="full">
             <div className="flex items-end gap-1.5 h-12">
               {stages.map(stage => {
                 const count = analytics.byStage[stage] || 0;
@@ -618,8 +618,12 @@ export default function Dashboard() {
             </div>
             <div className="flex gap-1.5 mt-1">
               {stages.map(stage => (
-                <span key={stage} className="flex-1 text-[8.5px] text-center text-light-500 dark:text-dark-400 truncate">
-                  {stageLabel(stage, store.preferences).slice(0, 8)}
+                <span
+                  key={stage}
+                  title={stageLabel(stage, store.preferences)}
+                  className="flex-1 min-w-0 text-[10px] text-center text-light-500 dark:text-dark-400 truncate"
+                >
+                  {stageLabel(stage, store.preferences)}
                 </span>
               ))}
             </div>
@@ -834,7 +838,7 @@ export default function Dashboard() {
                   </button>
                   <button
                     onClick={() => deleteAppTemplate(tpl.id)}
-                    className="opacity-0 group-hover:opacity-100 text-light-400 hover:text-red-500 transition-opacity"
+                    className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100 text-light-400 hover:text-red-500 transition-opacity"
                     aria-label={`Delete ${tpl.name}`}
                   >
                     <Trash2 size={10} />
@@ -864,7 +868,7 @@ export default function Dashboard() {
               </button>
               <button
                 onClick={() => deleteSavedView(v.id)}
-                className="opacity-0 group-hover:opacity-100 text-light-400 hover:text-red-500 transition-opacity"
+                className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100 text-light-400 hover:text-red-500 transition-opacity"
                 aria-label={`Delete ${v.name}`}
               >
                 <Trash2 size={10} />
@@ -1041,6 +1045,7 @@ export default function Dashboard() {
           onClose={closeForm}
           onSave={handleSave}
           initial={editApp}
+          interviewDates={editApp ? interviewsMap[editApp.id] : undefined}
           learnings={editApp ? editLearnings : undefined}
           prefill={editApp ? null : prefill}
         />
@@ -1057,13 +1062,17 @@ export default function Dashboard() {
           }}
           onDelete={async () => {
             const snapshot = detailApp;
+            const interviewSnapshot = interviewsMap[snapshot.id] || [];
+            const learningsSnapshot = learningsMap[snapshot.id];
             await deleteApplication(snapshot.id);
             setDetailApp(null);
             play('click');
-            // Recreating gives a new row id, so undo restores the record's content
-            // rather than its identity — which is what the user actually wants back.
+            // Undo re-inserts under the original id, so everything that hangs off it
+            // in this browser (tags, notes, reminders, priority) is reattached, and
+            // its interview dates and learnings come back with it.
             pushUndo(`Deleted ${snapshot.company_name}.`, async () => {
               await createApplication({
+                id: snapshot.id,
                 company_name: snapshot.company_name,
                 company_description: snapshot.company_description,
                 resume_used: snapshot.resume_used,
@@ -1079,7 +1088,14 @@ export default function Dashboard() {
                 cover_letter_path: snapshot.cover_letter_path,
                 role_applied_to: snapshot.role_applied_to,
                 platform_applied_on: snapshot.platform_applied_on,
-              });
+              }, interviewSnapshot.map(iv => ({
+                id: iv.id,
+                application_id: iv.application_id,
+                interview_date: iv.interview_date,
+                label: iv.label,
+              })), learningsSnapshot
+                ? { learnings: learningsSnapshot.learnings, questions_asked: learningsSnapshot.questions_asked }
+                : undefined);
             });
           }}
         />

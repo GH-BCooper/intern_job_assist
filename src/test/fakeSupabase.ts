@@ -55,7 +55,10 @@ export function createFakeSupabase(options: { user?: FakeUser | null; tables?: P
 
   const authListeners: ((event: string, session: unknown) => void)[] = [];
 
-  const session = user ? { user, access_token: 'fake-token', expires_at: Date.now() / 1000 + 3600 } : null;
+  const makeSession = () => (user ? { user, access_token: 'fake-token', expires_at: Date.now() / 1000 + 3600 } : null);
+  /** Signing out really ends the session, so a browser run can see the signed-out screens too. */
+  let session = makeSession();
+  const emitAuth = (event: string) => authListeners.slice().forEach(fn => fn(event, session));
 
   function matches(row: FakeRow, filters: Filter[]): boolean {
     return filters.every(f => {
@@ -172,16 +175,24 @@ export function createFakeSupabase(options: { user?: FakeUser | null; tables?: P
 
     auth: {
       getSession: () => Promise.resolve({ data: { session }, error: null }),
-      getUser: () => Promise.resolve({ data: { user }, error: null }),
+      getUser: () => Promise.resolve({ data: { user: session ? user : null }, error: null }),
       onAuthStateChange: (fn: (event: string, session: unknown) => void) => {
         authListeners.push(fn);
         // The real client fires once with the current session.
         setTimeout(() => fn('INITIAL_SESSION', session), 0);
         return { data: { subscription: { unsubscribe: () => undefined } } };
       },
-      signInWithPassword: () => Promise.resolve({ data: { session, user }, error: null }),
+      signInWithPassword: () => {
+        session = makeSession();
+        setTimeout(() => emitAuth('SIGNED_IN'), 0);
+        return Promise.resolve({ data: { session, user }, error: null });
+      },
       signUp: () => Promise.resolve({ data: { session: null, user }, error: null }),
-      signOut: () => Promise.resolve({ error: null }),
+      signOut: () => {
+        session = null;
+        setTimeout(() => emitAuth('SIGNED_OUT'), 0);
+        return Promise.resolve({ error: null });
+      },
       signInWithOAuth: () => Promise.resolve({ data: {}, error: null }),
       verifyOtp: () => Promise.resolve({ data: { session, user }, error: null }),
       resend: () => Promise.resolve({ error: null }),

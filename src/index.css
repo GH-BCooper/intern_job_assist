@@ -177,7 +177,7 @@
   }
 
   .card {
-    @apply bg-light-50/90 dark:bg-dark-900/80 backdrop-blur-sm border border-light-300 dark:border-dark-700 rounded-2xl shadow-soft transition-all duration-200;
+    @apply min-w-0 bg-light-50/90 dark:bg-dark-900/80 backdrop-blur-sm border border-light-300 dark:border-dark-700 rounded-2xl shadow-soft transition-all duration-200;
   }
 
   .card-hover {
@@ -285,15 +285,22 @@
     .ambient-mesh { animation: none; }
   }
 
-  /** Bento tiles: variable spans on one grid. */
+  /**
+   * Bento tiles: variable spans on one grid.
+   *
+   * Two columns on a phone, four from `lg`. `wide` is two columns at every size
+   * (a full row on a phone) and `full` always fills the row, so a row of
+   * 2+1+1, 1+1+2 and 4 tiles tiles the grid with no holes.
+   */
   .bento {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: .75rem;
   }
+  .bento-wide { grid-column: span 2; }
+  .bento-full { grid-column: 1 / -1; }
   @media (min-width: 1024px) {
     .bento { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-    .bento-wide { grid-column: span 2; }
     .bento-tall { grid-row: span 2; }
   }
 

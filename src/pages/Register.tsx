@@ -1,6 +1,7 @@
 import { useState, FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { usePageTitle } from '../hooks/usePageTitle';
 import { Sparkles, Loader2, Eye, EyeOff, Mail, ArrowLeft, ShieldCheck } from 'lucide-react';
 import OtpInput from '../components/ui/OtpInput';
 import PasswordStrengthMeter from '../components/ui/PasswordStrengthMeter';
@@ -32,6 +33,7 @@ function Logo() {
 }
 
 export default function Register() {
+  usePageTitle('Create account');
   const { signUp, signInWithGoogle, verifySignupOtp, resendSignupOtp } = useAuth();
   const navigate = useNavigate();
 

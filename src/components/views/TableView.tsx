@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Star } from 'lucide-react';
 import type { Application, InterviewDate } from '../../lib/supabase';
-import { stageLabel, stageOf } from '../../lib/insights';
+import { orderedStages, stageLabel, stageOf } from '../../lib/insights';
 import { useStore } from '../../hooks/useStore';
 import { toggleStar } from '../../lib/store';
 import { fmtDate, ts } from '../../lib/format';
@@ -32,6 +32,9 @@ type Props = {
 
 type SortKey = 'company' | 'role' | 'platform' | 'applied' | 'status' | 'stage' | 'interview' | 'priority';
 
+/** Responses in the order a search actually moves through them. */
+const RESPONSE_ORDER = ['Pending', 'Viewed', 'Shortlisted', 'Offered', 'Rejected'];
+
 const COLUMNS: { key: SortKey; label: string; className?: string }[] = [
   { key: 'company', label: 'Company' },
   { key: 'role', label: 'Role' },
@@ -55,6 +58,11 @@ export default function TableView({
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'applied', dir: -1 });
 
   const rows = useMemo(() => {
+    const pipeline = orderedStages(store.preferences);
+    const nextInterviewTs = (a: Application) => {
+      const upcoming = interviewsMap[a.id]?.find(i => ts(i.interview_date) >= Date.now() - 86_400_000);
+      return upcoming ? ts(upcoming.interview_date) : Number.MAX_SAFE_INTEGER;
+    };
     const value = (a: Application): string | number => {
       switch (sort.key) {
         case 'company':
@@ -63,12 +71,16 @@ export default function TableView({
           return (a.role_applied_to || '').toLowerCase();
         case 'platform':
           return (a.platform_applied_on || '').toLowerCase();
-        case 'status':
-          return a.response_status || '';
+        case 'status': {
+          const at = RESPONSE_ORDER.indexOf(a.response_status || 'Pending');
+          return at < 0 ? RESPONSE_ORDER.length : at;
+        }
         case 'stage':
-          return stageOf(a, store.stageOverrides);
+          // Pipeline order, not alphabetical: "Closed" is not before "Interviewing".
+          return pipeline.indexOf(stageOf(a, store.stageOverrides));
         case 'interview':
-          return ts(interviewsMap[a.id]?.[0]?.interview_date) || Number.MAX_SAFE_INTEGER;
+          // Matches the column, which shows the next upcoming round.
+          return nextInterviewTs(a);
         case 'priority':
           return store.priorities[a.id] || 0;
         default:
@@ -81,7 +93,7 @@ export default function TableView({
       if (va === vb) return 0;
       return (va > vb ? 1 : -1) * sort.dir;
     });
-  }, [applications, sort, store.stageOverrides, store.priorities, interviewsMap]);
+  }, [applications, sort, store.stageOverrides, store.priorities, store.preferences, interviewsMap]);
 
   /* ---------------------------- virtualisation ---------------------------- */
 
@@ -154,7 +166,18 @@ export default function TableView({
                 <tr
                   key={app.id}
                   onClick={() => onOpen(app)}
-                  className={`cursor-pointer hover:bg-primary-50/60 dark:hover:bg-primary-950/20 transition-colors ${
+                  tabIndex={0}
+                  aria-label={`Open ${app.company_name}`}
+                  onKeyDown={e => {
+                    // Rows are the only way into an application from this view, so
+                    // they have to work from the keyboard too.
+                    if (e.target !== e.currentTarget) return;
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onOpen(app);
+                    }
+                  }}
+                  className={`cursor-pointer focus-visible:bg-primary-50/80 dark:focus-visible:bg-primary-950/30 hover:bg-primary-50/60 dark:hover:bg-primary-950/20 transition-colors ${
                     selectedIds?.has(app.id) ? 'bg-primary-50/70 dark:bg-primary-950/30' : ''
                   }`}
                 >

@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { Download, Flame, Share2, Sparkles, TrendingUp, Trophy, X } from 'lucide-react';
 import type { Wrapped } from '../lib/insights';
 import { fmtDate } from '../lib/format';
@@ -9,6 +10,8 @@ import { toast } from '../lib/uiBus';
  * html2canvas already in the stack, so "share your progress" needs no service.
  */
 export default function WrappedCard({ data, onClose }: { data: Wrapped; onClose: () => void }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef);
   const cardRef = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false);
 
@@ -77,6 +80,7 @@ export default function WrappedCard({ data, onClose }: { data: Wrapped; onClose:
 
   return (
     <div
+      ref={dialogRef}
       className="fixed inset-0 z-[130] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in"
       onClick={onClose}
       role="dialog"

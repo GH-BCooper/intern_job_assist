@@ -2,17 +2,21 @@ import { Link } from 'react-router-dom';
 import {
   ArrowRight,
   Bell,
+  BrainCircuit,
   CalendarDays,
   Check,
   Command,
   Download,
   FolderKanban,
   Github,
+  ShieldCheck,
   Sparkles,
   TrendingUp,
-  WifiOff,
+  Workflow,
   Zap,
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 const FEATURES = [
   {
@@ -47,14 +51,24 @@ const FEATURES = [
     body: 'A command palette that jumps to any application, view, page or action without lifting your hands.',
   },
   {
-    icon: Download,
-    title: 'Your data, portable',
-    body: 'PDF, DOCX, CSV, JSON and ZIP exports with attachments. Import back in. Nothing is locked up.',
+    icon: Workflow,
+    title: 'Automations that run themselves',
+    body: 'Rules and one-click templates: nudge quiet applications, add prep tasks before interviews, tag offers, ping a webhook. Quiet hours included.',
   },
   {
-    icon: WifiOff,
-    title: 'Installable & offline',
-    body: 'A real PWA — install it, open it from your dock, and keep browsing your pipeline with no connection.',
+    icon: BrainCircuit,
+    title: 'A prep trainer',
+    body: 'Turn the questions you were asked into spaced-repetition flashcards, and keep the STAR stories you reuse in every behavioural round.',
+  },
+  {
+    icon: Download,
+    title: 'Your data, portable',
+    body: 'PDF, DOCX, CSV, JSON and ZIP exports with attachments. Import back in, or share a read-only dashboard link. Nothing is locked up.',
+  },
+  {
+    icon: ShieldCheck,
+    title: 'Offline and private',
+    body: 'Installable as an app, keeps working with no connection and syncs when you are back. Sensitive notes can sit behind a local passphrase.',
   },
 ];
 
@@ -67,6 +81,9 @@ const STACK = [
 ];
 
 export default function Home() {
+  const { user } = useAuth();
+  usePageTitle();
+
   return (
     <div className="min-h-screen pt-16">
       {/* hero */}
@@ -74,7 +91,7 @@ export default function Home() {
         <div className="absolute inset-0 grid-noise opacity-60 dark:opacity-25" aria-hidden />
         <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 pb-20 text-center">
           <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-primary-100/80 dark:bg-primary-950/50 text-primary-700 dark:text-primary-300 border border-primary-200 dark:border-primary-900 mb-6 animate-fade-in">
-            <Zap size={12} /> Version 2 — now with an AI that actually does the work
+            <Zap size={12} /> Version 4 — undo, offline sync, a prep trainer and shareable insights
           </span>
 
           <h1 className="text-4xl sm:text-6xl font-bold tracking-tight text-light-900 dark:text-white leading-[1.05] animate-slide-up">
@@ -89,12 +106,20 @@ export default function Home() {
           </p>
 
           <div className="mt-9 flex flex-wrap items-center justify-center gap-3 animate-slide-up">
-            <Link to="/register" className="btn-primary !px-6 !py-3 !text-base">
-              Start tracking free <ArrowRight size={17} />
-            </Link>
-            <Link to="/login" className="btn-secondary !px-6 !py-3 !text-base">
-              I already have an account
-            </Link>
+            {user ? (
+              <Link to="/dashboard" className="btn-primary !px-6 !py-3 !text-base">
+                Open your dashboard <ArrowRight size={17} />
+              </Link>
+            ) : (
+              <>
+                <Link to="/register" className="btn-primary !px-6 !py-3 !text-base">
+                  Start tracking free <ArrowRight size={17} />
+                </Link>
+                <Link to="/login" className="btn-secondary !px-6 !py-3 !text-base">
+                  I already have an account
+                </Link>
+              </>
+            )}
           </div>
 
           <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-light-600 dark:text-dark-300">
@@ -168,8 +193,8 @@ export default function Home() {
         <p className="text-sm text-light-700 dark:text-dark-200 mt-3 max-w-xl mx-auto">
           Set it up in two minutes. Connect a free AI key whenever you feel like it — everything works without one.
         </p>
-        <Link to="/register" className="btn-primary !px-6 !py-3 !text-base mt-7">
-          Create your tracker <ArrowRight size={17} />
+        <Link to={user ? '/dashboard' : '/register'} className="btn-primary !px-6 !py-3 !text-base mt-7">
+          {user ? 'Back to your dashboard' : 'Create your tracker'} <ArrowRight size={17} />
         </Link>
       </section>
 

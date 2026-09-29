@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import {
   Bell,
   BookOpen,
@@ -30,7 +31,7 @@ import {
   X,
 } from 'lucide-react';
 import type { Application, InterviewDate, InterviewLearning } from '../lib/supabase';
-import { supabase } from '../lib/supabase';
+import { getFileUrl, supabase } from '../lib/supabase';
 import { useData } from '../context/DataContext';
 import { useAI } from '../context/AIContext';
 import { useStore } from '../hooks/useStore';
@@ -61,6 +62,7 @@ import { downloadOnePager } from '../lib/onePager';
 import { extractQuestions } from '../lib/srs';
 import { celebrate, play } from '../lib/fx';
 import { pushUndo } from '../lib/undo';
+import { copyText } from '../lib/clipboard';
 
 /** Common IANA zones, enough to cover remote and international interviews. */
 const TIMEZONES = [
@@ -148,6 +150,9 @@ export default function ApplicationDetail({ application: app, onClose, onEdit, o
   const ai = useAI();
   const store = useStore();
 
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef);
+
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
@@ -204,6 +209,25 @@ export default function ApplicationDetail({ application: app, onClose, onEdit, o
       live = false;
     };
   }, [app.id, learningsMap]);
+
+  // Document links honour the "time-limited links" setting, like the Workspace
+  // does. They used to be permanent public URLs regardless of it.
+  const [docUrls, setDocUrls] = useState<{ resume: string | null; cover: string | null }>({ resume: null, cover: null });
+  useEffect(() => {
+    let live = true;
+    const opts = { signed: store.preferences.signedUrls };
+    void Promise.all([
+      app.resume_path ? getFileUrl(app.resume_path, opts) : Promise.resolve(null),
+      app.cover_letter_path ? getFileUrl(app.cover_letter_path, opts) : Promise.resolve(null),
+    ]).then(([resume, cover]) => {
+      if (live) setDocUrls({ resume, cover });
+    });
+    return () => {
+      live = false;
+    };
+  }, [app.resume_path, app.cover_letter_path, store.preferences.signedUrls]);
+  const resumeUrl = docUrls.resume;
+  const coverUrl = docUrls.cover;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -353,13 +377,15 @@ export default function ApplicationDetail({ application: app, onClose, onEdit, o
     }
   };
 
-  const resumeUrl = app.resume_path ? supabase.storage.from('applications').getPublicUrl(app.resume_path).data?.publicUrl : null;
-  const coverUrl = app.cover_letter_path
-    ? supabase.storage.from('applications').getPublicUrl(app.cover_letter_path).data?.publicUrl
-    : null;
 
   return (
-    <div className="fixed inset-0 z-[105] flex items-start sm:items-center justify-center p-0 sm:p-6 overflow-y-auto">
+    <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${app.company_name} application`}
+      className="fixed inset-0 z-[105] flex items-start sm:items-center justify-center p-0 sm:p-6 overflow-y-auto"
+    >
       <div className="fixed inset-0 bg-light-900/25 dark:bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
       <div className="relative w-full max-w-4xl my-0 sm:my-8 card !rounded-none sm:!rounded-2xl !bg-light-100 dark:!bg-dark-950 shadow-lift animate-scale-in">
@@ -457,9 +483,9 @@ export default function ApplicationDetail({ application: app, onClose, onEdit, o
                     </p>
                     <div className="flex items-center gap-1">
                       <button
-                        onClick={() => {
-                          void navigator.clipboard.writeText(draft.text);
-                          toast('Copied to clipboard.', 'success');
+                        onClick={async () => {
+                          const ok = await copyText(draft.text);
+                          toast(ok ? 'Copied to clipboard.' : 'Could not copy — select the text and copy it by hand.', ok ? 'success' : 'error');
                         }}
                         className="btn-ghost btn-sm !px-2"
                       >
@@ -536,6 +562,10 @@ export default function ApplicationDetail({ application: app, onClose, onEdit, o
                   </select>
                   <button
                     onClick={async () => {
+                      if (!ivDate || Number.isNaN(new Date(ivDate).getTime())) {
+                        toast('Pick a date and time for the round first.', 'error');
+                        return;
+                      }
                       try {
                         const created = await addInterviewDate(app.id, new Date(ivDate).toISOString(), ivLabel.trim() || 'Interview');
                         if (ivTimezone) setInterviewTimezone(created.id, ivTimezone);
@@ -545,7 +575,8 @@ export default function ApplicationDetail({ application: app, onClose, onEdit, o
                         // an automation they have to set up first.
                         const prepAt = new Date(new Date(ivDate).getTime() - 86_400_000);
                         prepAt.setHours(18, 0, 0, 0);
-                        if (prepAt.getTime() > Date.now()) {
+                        const addPrep = prepAt.getTime() > Date.now();
+                        if (addPrep) {
                           addReminder({
                             title: `Prep block — ${app.company_name} ${ivLabel.trim() || 'interview'}`,
                             due_at: prepAt.toISOString(),
@@ -557,7 +588,10 @@ export default function ApplicationDetail({ application: app, onClose, onEdit, o
                         setIvLabel('');
                         setIvTimezone('');
                         setShowIvForm(false);
-                        toast('Interview added, with a prep block the evening before.', 'success');
+                        toast(
+                          addPrep ? 'Interview added, with a prep block the evening before.' : 'Interview added.',
+                          'success',
+                        );
                       } catch (e) {
                         toast(e instanceof Error ? e.message : 'Could not add the interview.', 'error');
                       }
@@ -827,7 +861,7 @@ export default function ApplicationDetail({ application: app, onClose, onEdit, o
                         <span className="text-light-500 dark:text-dark-500">{relative(n.created_at)}</span>
                         <button
                           onClick={() => deleteNote(n.id)}
-                          className="opacity-0 group-hover:opacity-100 text-light-400 hover:text-red-500 transition-opacity"
+                          className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100 text-light-400 hover:text-red-500 transition-opacity"
                           aria-label="Delete note"
                         >
                           <Trash2 size={10} />
@@ -868,8 +902,12 @@ export default function ApplicationDetail({ application: app, onClose, onEdit, o
               </button>
               <button
                 onClick={async () => {
-                  const { exportSinglePDF } = await import('../utils/exportUtils');
-                  exportSinglePDF(app);
+                  try {
+                    const { exportSinglePDF } = await import('../utils/exportUtils');
+                    exportSinglePDF(app);
+                  } catch {
+                    toast('Could not build the PDF.', 'error');
+                  }
                 }}
                 className="btn-secondary btn-sm w-full !justify-start"
               >

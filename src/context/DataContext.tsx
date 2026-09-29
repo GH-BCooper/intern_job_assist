@@ -16,6 +16,14 @@ import { logActivity, setStoreScope, uid } from '../lib/store';
 import { ts } from '../lib/format';
 import { onUi, toast } from '../lib/uiBus';
 import { enqueue, flush, registerRunner } from '../lib/outbox';
+import { clearUndo } from '../lib/undo';
+
+/**
+ * An interview row as the form submits it. Rows that already exist carry their
+ * `id`, so a save can update them in place instead of deleting and re-creating
+ * them under new ids (which orphaned their timezone and re-fired automations).
+ */
+export type InterviewDraft = InterviewDateInsert & { id?: string };
 
 type DataContextType = {
   applications: Application[];
@@ -25,15 +33,16 @@ type DataContextType = {
   error: string;
   refresh: () => Promise<void>;
   createApplication: (
-    data: ApplicationInsert,
-    interviews?: InterviewDateInsert[],
+    /** Pass `id` to restore a record under its original identity (undo does). */
+    data: ApplicationInsert & { id?: string },
+    interviews?: InterviewDraft[],
     learnings?: Pick<InterviewLearning, 'learnings' | 'questions_asked'>,
     files?: ApplicationFiles,
   ) => Promise<Application>;
   updateApplication: (
     id: string,
     data: Partial<ApplicationInsert>,
-    interviews?: InterviewDateInsert[] | null,
+    interviews?: InterviewDraft[] | null,
     learnings?: Pick<InterviewLearning, 'learnings' | 'questions_asked'>,
     files?: ApplicationFiles,
   ) => Promise<Application>;
@@ -89,76 +98,112 @@ function isAuthError(message: string) {
 export function DataProvider({ children }: { children: ReactNode }) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  // `navigate` changes identity on every route change and `signOut` on every auth
+  // render. Reached through refs, they no longer sit in `refresh`'s dependencies,
+  // which is what made the whole pipeline reload each time you changed page.
+  const signOutRef = useRef(signOut);
+  signOutRef.current = signOut;
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
 
   const [applications, setApplications] = useState<Application[]>([]);
   const [interviewsMap, setInterviewsMap] = useState<Record<string, InterviewDate[]>>({});
   const [learningsMap, setLearningsMap] = useState<Record<string, InterviewLearning>>({});
   const [loading, setLoading] = useState(true);
+  /** Whose data `applications` currently holds; `loading` stays true until it is the signed-in user's. */
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
+  const loadedForRef = useRef<string | null>(null);
   const [error, setError] = useState('');
+  const userId = user?.id ?? null;
 
   /** Current applications, for callbacks that must not re-create on every change. */
   const applicationsRef = useRef<Application[]>([]);
   applicationsRef.current = applications;
+  const interviewsMapRef = useRef<Record<string, InterviewDate[]>>({});
+  interviewsMapRef.current = interviewsMap;
 
+  // AuthProvider already scopes the store before this user renders; this stays as
+  // a backstop for anything that swaps the user without going through it.
   useEffect(() => {
-    setStoreScope(user?.id);
-  }, [user?.id]);
+    setStoreScope(userId);
+    // An undo closure belongs to whoever was signed in when it was pushed; it
+    // must not survive into another account's session.
+    clearUndo();
+  }, [userId]);
+
+  /** Bumped by every refresh, so a slow response cannot overwrite a newer one. */
+  const refreshSeq = useRef(0);
 
   const refresh = useCallback(async () => {
-    if (!user) {
+    const seq = (refreshSeq.current += 1);
+    if (!userId) {
       setApplications([]);
       setInterviewsMap({});
+      setLearningsMap({});
+      loadedForRef.current = null;
+      setLoadedFor(null);
       setLoading(false);
       return;
     }
-    setLoading(true);
+    // Only the first load for a user shows the skeleton. A background refresh
+    // (after an offline sync, or "Reload") keeps the board on screen instead of
+    // flashing it away and back.
+    if (loadedForRef.current !== userId) setLoading(true);
     setError('');
     try {
-      const { data, error: err } = await supabase.from('applications').select('*');
-      if (err) throw err;
-      const sorted = sortByRecency(data ?? []);
+      // Row-level security already limits all three tables to this user, so there
+      // is no need for an `in (...)` filter listing every application id (which
+      // grows the request URL with the pipeline) — and the queries do not depend
+      // on one another, so they run together instead of one after the other.
+      const [apps, ivs, learnings] = await Promise.all([
+        supabase.from('applications').select('*'),
+        supabase.from('interview_dates').select('*'),
+        supabase.from('interview_learnings').select('*'),
+      ]);
+      if (apps.error) throw apps.error;
+      if (seq !== refreshSeq.current) return;
+
+      const sorted = sortByRecency(apps.data ?? []);
+
+      const map: Record<string, InterviewDate[]> = {};
+      (ivs.data || []).forEach(iv => {
+        if (!map[iv.application_id]) map[iv.application_id] = [];
+        map[iv.application_id].push(iv);
+      });
+      Object.keys(map).forEach(k => {
+        map[k].sort((a, b) => ts(a.interview_date) - ts(b.interview_date));
+      });
+
+      const lmap: Record<string, InterviewLearning> = {};
+      (learnings.data || []).forEach(l => {
+        lmap[l.application_id] = l;
+      });
+
+      // One update for all three, so the board never renders applications that
+      // are still missing their interviews.
       setApplications(sorted);
-
-      if (sorted.length) {
-        const { data: ivs } = await supabase
-          .from('interview_dates')
-          .select('*')
-          .in('application_id', sorted.map(a => a.id));
-        const map: Record<string, InterviewDate[]> = {};
-        (ivs || []).forEach(iv => {
-          if (!map[iv.application_id]) map[iv.application_id] = [];
-          map[iv.application_id].push(iv);
-        });
-        Object.keys(map).forEach(k => {
-          map[k].sort((a, b) => ts(a.interview_date) - ts(b.interview_date));
-        });
-        setInterviewsMap(map);
-
-        const { data: learnings } = await supabase
-          .from('interview_learnings')
-          .select('*')
-          .in('application_id', sorted.map(a => a.id));
-        const lmap: Record<string, InterviewLearning> = {};
-        (learnings || []).forEach(l => {
-          lmap[l.application_id] = l;
-        });
-        setLearningsMap(lmap);
-      } else {
-        setInterviewsMap({});
-        setLearningsMap({});
+      setInterviewsMap(map);
+      setLearningsMap(lmap);
+      if (ivs.error || learnings.error) {
+        console.warn('Interview data could not be loaded', ivs.error || learnings.error);
       }
     } catch (e) {
+      if (seq !== refreshSeq.current) return;
       const message = errMessage(e);
       if (isAuthError(message)) {
-        await signOut();
-        navigate('/login', { replace: true });
+        await signOutRef.current();
+        navigateRef.current('/login', { replace: true });
         return;
       }
       setError(message);
     } finally {
-      setLoading(false);
+      if (seq === refreshSeq.current) {
+        loadedForRef.current = userId;
+        setLoadedFor(userId);
+        setLoading(false);
+      }
     }
-  }, [user, signOut, navigate]);
+  }, [userId]);
 
   useEffect(() => {
     void refresh();
@@ -228,7 +273,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const createApplication = useCallback<DataContextType['createApplication']>(
     async (data, interviews = [], learnings, files) => {
       if (!user) throw new Error('You must be signed in.');
-      const applicationId = uid();
+      const applicationId = data.id || uid();
       let resume_path = data.resume_path;
       let cover_letter_path = data.cover_letter_path;
 
@@ -275,7 +320,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
           .insert(interviews.map(iv => ({ ...iv, application_id: created.id, user_id: user.id })))
           .select();
         if (ivErr) throw new Error(`Application saved, but interview dates failed to save: ${ivErr.message}`);
-        if (added) setInterviewsMap(prev => ({ ...prev, [created.id]: added }));
+        if (added) {
+          setInterviewsMap(prev => ({
+            ...prev,
+            [created.id]: [...added].sort((a, b) => ts(a.interview_date) - ts(b.interview_date)),
+          }));
+        }
       }
       if (learnings && (learnings.learnings || learnings.questions_asked)) {
         const { data: saved, error: lErr } = await supabase
@@ -342,22 +392,53 @@ export function DataProvider({ children }: { children: ReactNode }) {
       logActivity(`Updated ${updated.company_name}`, { kind: 'update', application_id: id });
 
       if (interviews) {
-        const { error: delErr } = await supabase.from('interview_dates').delete().eq('application_id', id);
-        if (delErr) throw new Error(`Application saved, but interview dates failed to update: ${delErr.message}`);
-        if (interviews.length) {
-          const { data: added, error: ivErr } = await supabase
+        const previous = interviewsMapRef.current[id] || [];
+        const keep = new Set(interviews.filter(iv => iv.id).map(iv => iv.id as string));
+        const removed = previous.filter(p => !keep.has(p.id));
+        const changed = interviews.filter(iv => {
+          const before = iv.id ? previous.find(p => p.id === iv.id) : undefined;
+          return before && (before.interview_date !== iv.interview_date || before.label !== iv.label);
+        });
+        const created = interviews.filter(iv => !iv.id || !previous.some(p => p.id === iv.id));
+
+        if (removed.length) {
+          const { error: delErr } = await supabase
             .from('interview_dates')
-            .insert(interviews.map(iv => ({ ...iv, application_id: id, user_id: user.id })))
+            .delete()
+            .in('id', removed.map(r => r.id));
+          if (delErr) throw new Error(`Application saved, but interview dates failed to update: ${delErr.message}`);
+        }
+        for (const iv of changed) {
+          const { error: updErr } = await supabase
+            .from('interview_dates')
+            .update({ interview_date: iv.interview_date, label: iv.label })
+            .eq('id', iv.id as string);
+          if (updErr) throw new Error(`Application saved, but interview dates failed to update: ${updErr.message}`);
+        }
+        let added: InterviewDate[] = [];
+        if (created.length) {
+          const { data: inserted, error: ivErr } = await supabase
+            .from('interview_dates')
+            .insert(created.map(iv => ({ ...iv, application_id: id, user_id: user.id })))
             .select();
           if (ivErr) throw new Error(`Application saved, but interview dates failed to save: ${ivErr.message}`);
-          setInterviewsMap(prev => ({ ...prev, [id]: added || [] }));
-        } else {
-          setInterviewsMap(prev => {
-            const next = { ...prev };
-            delete next[id];
-            return next;
-          });
+          added = inserted || [];
         }
+
+        // Rebuild the local list from what was submitted, not from a refetch.
+        const byId = new Map(interviews.filter(iv => iv.id).map(iv => [iv.id as string, iv]));
+        const next = [
+          ...previous
+            .filter(p => byId.has(p.id))
+            .map(p => ({ ...p, interview_date: byId.get(p.id)!.interview_date, label: byId.get(p.id)!.label })),
+          ...added,
+        ].sort((a, b) => ts(a.interview_date) - ts(b.interview_date));
+        setInterviewsMap(prev => {
+          const map = { ...prev };
+          if (next.length) map[id] = next;
+          else delete map[id];
+          return map;
+        });
       }
 
       if (learnings) {
@@ -449,12 +530,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return data ?? null;
   }, []);
 
+  // True until the signed-in user's own data has landed, so a screen never
+  // renders "no applications" for the instant between sign-in and the first fetch.
+  const isLoading = loading || (userId !== null && loadedFor !== userId);
+
   const value = useMemo<DataContextType>(
     () => ({
       applications,
       interviewsMap,
       learningsMap,
-      loading,
+      loading: isLoading,
       error,
       refresh,
       createApplication,
@@ -468,7 +553,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       applications,
       interviewsMap,
       learningsMap,
-      loading,
+      isLoading,
       error,
       refresh,
       createApplication,

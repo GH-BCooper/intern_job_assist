@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import { Check, Minus, X } from 'lucide-react';
 import type { Application, InterviewDate } from '../lib/supabase';
 import { useStore } from '../hooks/useStore';
@@ -32,6 +33,8 @@ export default function CompareView({
   onClose: () => void;
   onOpen: (app: Application) => void;
 }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef);
   const store = useStore();
 
   const rows = useMemo<Row[]>(
@@ -92,6 +95,7 @@ export default function CompareView({
 
   return (
     <div
+      ref={dialogRef}
       className="fixed inset-0 z-[125] bg-black/50 backdrop-blur-sm p-4 overflow-y-auto animate-fade-in"
       role="dialog"
       aria-modal="true"

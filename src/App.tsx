@@ -19,6 +19,7 @@ import { useNotificationEngine } from './hooks/useAlerts';
 import { useAutomationEngine } from './hooks/useAutomations';
 import { useAutoLock } from './hooks/useAutoLock';
 import { consumeAddHash } from './lib/bookmarklet';
+import { peekUndo, runUndo } from './lib/undo';
 import LockScreen from './components/LockScreen';
 
 // Secondary pages load on demand — the dashboard is the only route most sessions need.
@@ -92,6 +93,26 @@ function UiBridge() {
       }),
     [navigate, theme, setTheme],
   );
+
+  /**
+   * Ctrl/Cmd+Z reverses the last destructive action (a delete, a stage move).
+   *
+   * The undo stack existed and its toast offered the button, but the keyboard
+   * shortcut its own header promises was never wired. Inside a text field the
+   * key is left alone so it still undoes typing.
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'z') return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      if (!peekUndo()) return;
+      e.preventDefault();
+      void runUndo();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   /**
    * Handoff from the bookmarklet or the browser extension.

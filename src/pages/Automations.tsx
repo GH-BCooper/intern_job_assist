@@ -25,6 +25,7 @@ import {
   ListChecks,
 } from 'lucide-react';
 import PageShell from '../components/PageShell';
+import Switch from '../components/ui/Switch';
 import { useStore } from '../hooks/useStore';
 import { useData } from '../context/DataContext';
 import {
@@ -174,21 +175,7 @@ function RuleCard({ rule }: { rule: AutomationRule }) {
             <p className="text-xs text-light-600 dark:text-dark-300 mt-0.5 leading-relaxed">{rule.description}</p>
           </div>
         </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={rule.enabled}
-          onClick={() => toggleAutomationRule(rule.id)}
-          className={`relative w-10 h-[22px] rounded-full flex-shrink-0 transition-colors ${
-            rule.enabled ? 'bg-gradient-to-r from-primary-500 to-accent-500' : 'bg-light-300 dark:bg-dark-700'
-          }`}
-        >
-          <span
-            className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-transform ${
-              rule.enabled ? 'translate-x-[21px]' : 'translate-x-[3px]'
-            }`}
-          />
-        </button>
+        <Switch checked={rule.enabled} onChange={() => toggleAutomationRule(rule.id)} label={`${rule.name} enabled`} />
       </div>
 
       <div className="flex flex-wrap gap-1.5">
@@ -403,21 +390,11 @@ export default function Automations() {
       subtitle="When something happens in your pipeline, InternTrack can act on it automatically — no code, no cost."
       actions={
         <label className="flex items-center gap-2 text-sm font-medium text-light-800 dark:text-dark-100">
-          <button
-            type="button"
-            role="switch"
-            aria-checked={store.preferences.automationsEnabled}
-            onClick={() => savePreferences({ automationsEnabled: !store.preferences.automationsEnabled })}
-            className={`relative w-10 h-[22px] rounded-full flex-shrink-0 transition-colors ${
-              store.preferences.automationsEnabled ? 'bg-gradient-to-r from-primary-500 to-accent-500' : 'bg-light-300 dark:bg-dark-700'
-            }`}
-          >
-            <span
-              className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-transform ${
-                store.preferences.automationsEnabled ? 'translate-x-[21px]' : 'translate-x-[3px]'
-              }`}
-            />
-          </button>
+          <Switch
+            checked={store.preferences.automationsEnabled}
+            onChange={next => savePreferences({ automationsEnabled: next })}
+            label="Automations engine"
+          />
           Automations engine {store.preferences.automationsEnabled ? 'on' : 'paused'}
         </label>
       }
@@ -520,21 +497,11 @@ export default function Automations() {
             </p>
             <label className="flex items-center justify-between gap-3 mb-2">
               <span className="text-sm font-medium text-light-900 dark:text-white">Enabled</span>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={quiet.enabled}
-                onClick={() => savePreferences({ quietHours: { ...quiet, enabled: !quiet.enabled } })}
-                className={`relative w-10 h-[22px] rounded-full flex-shrink-0 transition-colors ${
-                  quiet.enabled ? 'bg-gradient-to-r from-primary-500 to-accent-500' : 'bg-light-300 dark:bg-dark-700'
-                }`}
-              >
-                <span
-                  className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-transform ${
-                    quiet.enabled ? 'translate-x-[21px]' : 'translate-x-[3px]'
-                  }`}
-                />
-              </button>
+              <Switch
+                checked={quiet.enabled}
+                onChange={next => savePreferences({ quietHours: { ...quiet, enabled: next } })}
+                label="Quiet hours"
+              />
             </label>
             <div className="flex items-center gap-2">
               <select

@@ -1,6 +1,7 @@
 import { useState, FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { usePageTitle } from '../hooks/usePageTitle';
 import { Sparkles, Loader2, Eye, EyeOff } from 'lucide-react';
 
 function GoogleIcon() {
@@ -15,6 +16,7 @@ function GoogleIcon() {
 }
 
 export default function Login() {
+  usePageTitle('Sign in');
   const { signIn, signInWithGoogle } = useAuth();
   const navigate = useNavigate();
 
