@@ -50,7 +50,7 @@ import {
   upsertTag,
 } from '../lib/store';
 import { daysUntil, fmtDate, fmtDateTime, relative, toLocalInput } from '../lib/format';
-import { announce, toast } from '../lib/uiBus';
+import { announce, emitUi, toast } from '../lib/uiBus';
 import Markdown from './ui/Markdown';
 import CompanyLogo from './ui/CompanyLogo';
 import JourneyStepper from './ui/JourneyStepper';
@@ -281,6 +281,11 @@ export default function ApplicationDetail({ application: app, onClose, onEdit, o
   const runAiAction = async (action: (typeof AI_ACTIONS)[number]) => {
     if (!ai.configured) {
       toast('Connect a free model in Settings first.', 'error');
+      return;
+    }
+    if (action.id === 'mock') {
+      // A roleplay is a conversation, not a one-shot draft — hand it to the panel.
+      emitUi({ type: 'open-assistant', prompt: action.prompt(app) });
       return;
     }
     setBusyAction(action.id);

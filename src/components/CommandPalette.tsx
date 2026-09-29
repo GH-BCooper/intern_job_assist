@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
   Bell,
+  CornerDownLeft,
   Briefcase,
   CalendarDays,
   Download,
@@ -24,6 +25,8 @@ import { emitUi, onUi } from '../lib/uiBus';
 import { stageOf } from '../lib/insights';
 import { downloadText, toCsv } from '../lib/ai/tools';
 import { fmtDate } from '../lib/format';
+import { useAI } from '../context/AIContext';
+import Markdown from './ui/Markdown';
 
 type Command = {
   id: string;
@@ -42,8 +45,12 @@ export default function CommandPalette() {
   const { applications, refresh } = useData();
   const { theme, toggleTheme } = useTheme();
   const store = useStore();
+  const ai = useAI();
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  /** Spotlight-style inline answer, when the query reads as a question. */
+  const [answer, setAnswer] = useState<{ question: string; text: string } | null>(null);
+  const [asking, setAsking] = useState(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -132,7 +139,39 @@ export default function CommandPalette() {
 
   useEffect(() => {
     setIndex(0);
+    setAnswer(null);
   }, [query]);
+
+  /**
+   * A full question typed into the palette is usually not a command.
+   *
+   * Rather than guessing, the palette offers to answer inline — one Scout call,
+   * one line back, no need to open the whole assistant panel for a quick fact.
+   */
+  const looksLikeQuestion =
+    query.trim().length > 12 &&
+    (query.includes('?') || /^(how|what|which|when|why|who|where|do|does|did|is|are|am|can|should|tell)\b/i.test(query.trim()));
+
+  const askInline = useCallback(async () => {
+    const question = query.trim();
+    if (!question || asking) return;
+    if (!ai.configured) {
+      emitUi({ type: 'open-assistant', prompt: question });
+      setOpen(false);
+      return;
+    }
+    setAsking(true);
+    try {
+      const text = await ai.askInline(
+        `${question}\n\nAnswer in one or two short sentences. If you need a record you do not have, say so in one line instead of guessing.`,
+      );
+      setAnswer({ question, text });
+    } catch (e) {
+      setAnswer({ question, text: e instanceof Error ? e.message : 'Could not answer that.' });
+    } finally {
+      setAsking(false);
+    }
+  }, [query, asking, ai]);
 
   useEffect(() => {
     listRef.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' });
@@ -161,7 +200,11 @@ export default function CommandPalette() {
                 setIndex(i => Math.max(i - 1, 0));
               } else if (e.key === 'Enter') {
                 e.preventDefault();
-                ordered[index]?.run();
+                if (e.metaKey || e.ctrlKey || !ordered.length || (looksLikeQuestion && !query.trim().startsWith('/'))) {
+                  void askInline();
+                } else {
+                  ordered[index]?.run();
+                }
               }
             }}
             placeholder="Search applications, jump to a page, run a command…"
@@ -170,9 +213,56 @@ export default function CommandPalette() {
           <span className="kbd">esc</span>
         </div>
 
+        {(looksLikeQuestion || answer || asking) && (
+          <div className="px-4 py-3 border-b border-light-300 dark:border-dark-800 bg-primary-50/50 dark:bg-primary-950/20">
+            {asking ? (
+              <p className="flex items-center gap-2 text-xs text-light-600 dark:text-dark-300">
+                <Sparkles size={12} className="text-primary-500 animate-pulse" /> Asking Scout…
+              </p>
+            ) : answer ? (
+              <div className="flex gap-2.5">
+                <Sparkles size={13} className="text-primary-500 mt-0.5 flex-shrink-0" />
+                <div className="min-w-0">
+                  <Markdown text={answer.text} className="!text-[13px] text-light-800 dark:text-dark-100" />
+                  <button
+                    onClick={() => {
+                      emitUi({ type: 'open-assistant', prompt: answer.question });
+                      setOpen(false);
+                    }}
+                    className="mt-1 text-[11px] font-semibold text-primary-600 dark:text-primary-400 hover:underline"
+                  >
+                    Continue in Scout →
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => void askInline()}
+                className="flex items-center gap-2 text-xs text-light-600 dark:text-dark-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+              >
+                <Sparkles size={12} className="text-primary-500" />
+                Ask Scout: <span className="font-medium truncate max-w-[18rem]">{query.trim()}</span>
+                <span className="kbd ml-1">
+                  <CornerDownLeft size={9} />
+                </span>
+              </button>
+            )}
+          </div>
+        )}
+
         <div ref={listRef} className="max-h-[52vh] overflow-y-auto py-2">
-          {ordered.length === 0 && (
-            <p className="px-4 py-8 text-center text-sm text-light-500 dark:text-dark-400">No matches.</p>
+          {ordered.length === 0 && !answer && !asking && (
+            <p className="px-4 py-8 text-center text-sm text-light-500 dark:text-dark-400">
+              No matches.
+              {query.trim().length > 2 && (
+                <>
+                  <br />
+                  <button onClick={() => void askInline()} className="text-primary-600 dark:text-primary-400 underline mt-1">
+                    Ask Scout instead
+                  </button>
+                </>
+              )}
+            </p>
           )}
           {grouped.map(g => (
             <div key={g.group} className="mb-1">
@@ -214,6 +304,9 @@ export default function CommandPalette() {
           </span>
           <span className="flex items-center gap-1">
             <span className="kbd">↵</span> run
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="kbd">⌘↵</span> ask Scout
           </span>
           <span className="ml-auto flex items-center gap-1">
             <span className="kbd">⌘K</span> anywhere

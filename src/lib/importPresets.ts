@@ -74,7 +74,7 @@ export const PRESETS: ImportPreset[] = [
     id: 'teal',
     label: 'Teal HQ',
     hint: 'Teal job tracker export (Company Name / Job Title / Status).',
-    signature: ['job title', 'company name'],
+    signature: ['job title', 'company name', 'status'],
     map: {
       company_name: ['company name', 'company'],
       role_applied_to: ['job title', 'role'],
@@ -166,12 +166,21 @@ const lower = (o: Record<string, string>) => {
   return out;
 };
 
-/** Picks the preset whose signature headers all appear in the file. */
+/**
+ * Picks the preset whose signature headers all appear in the file.
+ *
+ * Several signatures can match one file — a Teal export also satisfies
+ * LinkedIn's columns — so the most specific match wins rather than the first
+ * one declared.
+ */
 export function detectPreset(rows: Record<string, string>[]): ImportPreset {
   if (!rows.length) return PRESETS[PRESETS.length - 1];
   const headers = new Set(Object.keys(rows[0]).map(h => h.trim().toLowerCase()));
-  const found = PRESETS.find(p => p.signature.length > 0 && p.signature.every(s => headers.has(s)));
-  return found || PRESETS[PRESETS.length - 1];
+  const matches = PRESETS.filter(p => p.signature.length > 0 && p.signature.every(s => headers.has(s)));
+  if (!matches.length) return PRESETS[PRESETS.length - 1];
+  return matches.reduce((best, candidate) =>
+    candidate.signature.length > best.signature.length ? candidate : best,
+  );
 }
 
 function pick(row: Record<string, string>, candidates: string[] = []): string {

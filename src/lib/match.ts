@@ -16,7 +16,11 @@ const STOPWORDS = new Set(
     'work working works role position candidate candidates applicant applicants job jobs company companies ' +
     'team teams year years month months day days new strong ability able help helps helping including include ' +
     'includes required require requires requirement requirements responsibility responsibilities preferred plus ' +
-    'you will who what which whom whose '
+    'you will who what which whom whose experience experiences skill skills knowledge familiarity ' +
+    'understanding proficiency proficient expertise ability abilities looking need needs want wants ideal ' +
+    'excellent good great strong solid demonstrated proven track record opportunity opportunities environment ' +
+    'culture benefits apply application applying qualified qualifications minimum basic bonus plus nice ' +
+    'must should etc degree pursuing currently ' 
   ).split(/\s+/),
 );
 

@@ -59,10 +59,14 @@ const SOURCE = `(function(){
   window.open('__ORIGIN__/dashboard#interntrack-add=' + encodeURIComponent(JSON.stringify(payload)), '_blank');
 })();`;
 
-/** Collapses the readable source into a single-line bookmarklet URL. */
+/**
+ * Collapses the readable source into a single-line bookmarklet URL.
+ *
+ * Only whitespace is collapsed. Stripping `//` line comments would also eat the
+ * `//` in `https://`, so SOURCE deliberately carries no line comments instead.
+ */
 export function bookmarkletCode(origin = typeof location !== 'undefined' ? location.origin : ''): string {
   const body = SOURCE.replace(/__ORIGIN__/g, origin.replace(/\/$/, ''))
-    .replace(/\/\/[^\n]*/g, '')
     .replace(/\s*\n\s*/g, ' ')
     .replace(/\s{2,}/g, ' ')
     .trim();

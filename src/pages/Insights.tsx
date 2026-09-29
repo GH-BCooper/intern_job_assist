@@ -18,11 +18,11 @@ import {
   Trophy,
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
+import { useAnalytics } from '../hooks/useAnalytics';
 import { useAI } from '../context/AIContext';
 import { useStore } from '../hooks/useStore';
 import {
   buildSuggestions,
-  computeAnalytics,
   momentumBreakdown,
   offerProjection,
   periodComparisons,
@@ -93,9 +93,12 @@ export default function Insights() {
   const [briefing, setBriefing] = useState('');
   const [briefingBusy, setBriefingBusy] = useState(false);
 
-  const a = useMemo(
-    () => computeAnalytics(applications, interviewsMap, store, store.preferences.followUpDays),
-    [applications, interviewsMap, store],
+  // Large histories compute on a worker so mounting Insights never stutters.
+  const { analytics: a, offloaded } = useAnalytics(
+    applications,
+    interviewsMap,
+    store,
+    store.preferences.followUpDays,
   );
   const comparisons = useMemo(() => periodComparisons(applications), [applications]);
   const [period, setPeriod] = useState<'week' | 'month' | 'quarter'>('week');
@@ -660,6 +663,12 @@ export default function Insights() {
           </ul>
         )}
       </div>
+      {offloaded && (
+        <p className="text-[10.5px] text-light-500 dark:text-dark-400 mt-4">
+          Analytics for {a.total} applications were computed on a background thread.
+        </p>
+      )}
+
       {showWrapped && <WrappedCard data={wrapped} onClose={() => setShowWrapped(false)} />}
     </PageShell>
   );

@@ -663,6 +663,44 @@ export function updateReminder(id: ID, patch: Partial<Reminder>) {
   });
 }
 
+/**
+ * Marks a reminder done, re-scheduling it when it repeats.
+ *
+ * A recurring reminder is not a series of rows: the same record moves forward to
+ * its next occurrence, so the list never fills with completed copies. The next
+ * due date is computed from the *previous due date*, not from now, so a reminder
+ * completed late does not drift later every cycle.
+ */
+export function completeReminder(id: ID) {
+  mutate(d => {
+    const reminder = d.reminders.find(r => r.id === id);
+    if (!reminder) return;
+
+    if (reminder.repeat === 'none') {
+      reminder.done = true;
+      return;
+    }
+
+    const next = new Date(reminder.due_at);
+    const step = () => {
+      if (reminder.repeat === 'daily') next.setDate(next.getDate() + 1);
+      else if (reminder.repeat === 'weekly') next.setDate(next.getDate() + 7);
+      else next.setMonth(next.getMonth() + 1);
+    };
+    step();
+    // Skip any occurrences already in the past (a reminder left for a fortnight).
+    let guard = 0;
+    while (next.getTime() <= Date.now() && guard < 400) {
+      step();
+      guard += 1;
+    }
+
+    reminder.due_at = next.toISOString();
+    reminder.done = false;
+    reminder.notified = false;
+  });
+}
+
 export function deleteReminder(id: ID) {
   mutate(d => {
     d.reminders = d.reminders.filter(r => r.id !== id);
@@ -803,6 +841,18 @@ export function setStage(applicationId: ID, stage: string, from?: string, actor:
         created_at: now(),
       });
       d.stageHistory = d.stageHistory.slice(0, 1000);
+      // Manual board drags and stage-picker changes used to leave no trace in
+      // the activity log, which made it a record of what the AI did rather than
+      // a history. Logging here covers every caller at once.
+      d.activity.unshift({
+        id: uid(),
+        kind: 'stage',
+        summary: previous ? `Moved from ${previous} to ${stage}` : `Moved to ${stage}`,
+        application_id: applicationId,
+        actor,
+        created_at: now(),
+      });
+      d.activity = d.activity.slice(0, 500);
     }
   });
 }

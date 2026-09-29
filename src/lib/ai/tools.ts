@@ -9,6 +9,7 @@ import type { ToolSchema } from './providers';
 import {
   addAutomationRule,
   addContact,
+  completeReminder,
   addScoutMemory,
   addSrsCards,
   addStarStory,
@@ -28,7 +29,6 @@ import {
   toggleArchive,
   toggleAutomationRule,
   toggleStar,
-  updateReminder,
   touchContact,
   upsertTag,
   type AutomationActionType,
@@ -876,7 +876,7 @@ export async function executeTool(name: string, args: Args, bridge: ToolBridge):
       const id = str(args, 'reminder_id');
       if (!store.reminders.some(r => r.id === id)) return ok({ error: 'Reminder not found.' });
       if (bool(args, 'remove')) deleteReminder(id);
-      else updateReminder(id, { done: true });
+      else completeReminder(id);
       return ok({ ok: true, removed: bool(args, 'remove') });
     }
 

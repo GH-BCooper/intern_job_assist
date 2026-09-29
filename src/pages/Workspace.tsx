@@ -1,18 +1,26 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   Activity,
   Bell,
+  Braces,
   CheckSquare,
+  Copy,
+  Download,
   FileText,
   History,
+  Loader2,
   Mail,
+  MessageSquare,
   Phone,
   Pin,
   Plus,
+  Repeat,
   Sparkles,
   StickyNote,
   Tag as TagIcon,
   Trash2,
+  Upload,
+  UserCheck,
   Users,
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
@@ -20,24 +28,36 @@ import { useStore } from '../hooks/useStore';
 import PageShell from '../components/PageShell';
 import {
   addContact,
+  addCoverTemplate,
+  completeReminder,
   addNote,
   addReminder,
   addResumeVersion,
   addTask,
   deleteContact,
+  deleteCoverTemplate,
   deleteNote,
   deleteReminder,
   deleteResumeVersion,
   deleteTag,
   deleteTask,
+  logActivity,
   toggleTask,
+  touchContact,
+  updateCoverTemplate,
   updateNote,
-  updateReminder,
   upsertTag,
+  type CoverTemplate,
+  type Reminder,
 } from '../lib/store';
 import { emitUi, toast } from '../lib/uiBus';
-import { fmtDateTime, relative, toLocalInput, ts } from '../lib/format';
+import { daysSince, fmtDateTime, relative, toLocalInput, ts } from '../lib/format';
 import Markdown from '../components/ui/Markdown';
+import { useAuth } from '../context/AuthContext';
+import { deleteStoredFile, getFileUrl, uploadResumeVersionFile } from '../lib/supabase';
+import { extractTextFromFile } from '../utils/pdfUtils';
+import { usePreferences } from '../hooks/useStore';
+import { play } from '../lib/fx';
 
 const TABS = [
   { id: 'tasks', label: 'Tasks', icon: CheckSquare },
@@ -45,6 +65,7 @@ const TABS = [
   { id: 'notes', label: 'Notes', icon: StickyNote },
   { id: 'contacts', label: 'Contacts', icon: Users },
   { id: 'resumes', label: 'Resumes', icon: FileText },
+  { id: 'letters', label: 'Cover letters', icon: MessageSquare },
   { id: 'tags', label: 'Tags', icon: TagIcon },
   { id: 'activity', label: 'Activity', icon: History },
 ] as const;
@@ -65,6 +86,7 @@ export default function Workspace() {
       notes: store.notes.length,
       contacts: store.contacts.length,
       resumes: store.resumes.length,
+      letters: store.coverTemplates.length,
       tags: store.tags.length,
       activity: store.activity.length,
     }),
@@ -111,6 +133,7 @@ export default function Workspace() {
       {tab === 'notes' && <NotesTab companyOf={companyOf} />}
       {tab === 'contacts' && <ContactsTab companyOf={companyOf} />}
       {tab === 'resumes' && <ResumesTab />}
+      {tab === 'letters' && <LettersTab />}
       {tab === 'tags' && <TagsTab />}
       {tab === 'activity' && <ActivityTab companyOf={companyOf} />}
     </PageShell>
@@ -204,6 +227,7 @@ function RemindersTab({ companyOf }: { companyOf: CompanyOf }) {
   const store = useStore();
   const [title, setTitle] = useState('');
   const [when, setWhen] = useState(() => toLocalInput());
+  const [repeat, setRepeat] = useState<Reminder['repeat']>('none');
   const sorted = [...store.reminders].sort((a, b) => Number(a.done) - Number(b.done) || ts(a.due_at) - ts(b.due_at));
 
   return (
@@ -211,12 +235,23 @@ function RemindersTab({ companyOf }: { companyOf: CompanyOf }) {
       <div className="card p-3 flex flex-col sm:flex-row gap-2">
         <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Remind me to…" className="input-field" />
         <input type="datetime-local" value={when} onChange={e => setWhen(e.target.value)} className="input-field sm:w-56" />
+        <select
+          value={repeat}
+          onChange={e => setRepeat(e.target.value as Reminder['repeat'])}
+          className="input-field sm:w-36 !text-xs"
+          aria-label="Repeat"
+        >
+          <option value="none">One-off</option>
+          <option value="daily">Every day</option>
+          <option value="weekly">Every week</option>
+          <option value="monthly">Every month</option>
+        </select>
         <button
           onClick={() => {
             if (!title.trim()) return;
-            addReminder({ title: title.trim(), due_at: new Date(when).toISOString() });
+            addReminder({ title: title.trim(), due_at: new Date(when).toISOString(), repeat });
             setTitle('');
-            toast('Reminder set.', 'success');
+            toast(repeat === 'none' ? 'Reminder set.' : 'Recurring reminder set — it re-schedules itself when you complete it.', 'success');
           }}
           disabled={!title.trim()}
           className="btn-primary flex-shrink-0"
@@ -248,7 +283,7 @@ function RemindersTab({ companyOf }: { companyOf: CompanyOf }) {
                   {r.notes && <p className="text-[11px] text-light-600 dark:text-dark-300 mt-0.5">{r.notes}</p>}
                 </div>
                 {!r.done && (
-                  <button onClick={() => updateReminder(r.id, { done: true })} className="btn-ghost btn-sm !px-2 text-emerald-600 dark:text-emerald-400">
+                  <button onClick={() => completeReminder(r.id)} className="btn-ghost btn-sm !px-2 text-emerald-600 dark:text-emerald-400">
                     Done
                   </button>
                 )}
@@ -389,19 +424,52 @@ function ContactsTab({ companyOf }: { companyOf: CompanyOf }) {
                   </a>
                 )}
               </div>
-              <button
-                onClick={() =>
-                  emitUi({
-                    type: 'open-assistant',
-                    prompt: `Draft a short, warm outreach message to ${c.name}${c.role ? ` (${c.role})` : ''}${
-                      companyOf(c.application_id) ? ` at ${companyOf(c.application_id)}` : ''
-                    }, referencing my actual application.`,
-                  })
-                }
-                className="btn-secondary btn-sm w-full mt-3"
-              >
-                <Sparkles size={12} /> Draft outreach
-              </button>
+              {(() => {
+                // The follow-up clock the contact_follow_up_due trigger reads.
+                const last = store.contactTouched[c.id] || c.created_at;
+                const since = daysSince(last);
+                const stale = since !== null && since >= 30;
+                return (
+                  <p
+                    className={`text-[10.5px] mt-2 flex items-center gap-1 ${
+                      stale ? 'text-amber-600 dark:text-amber-400' : 'text-light-500 dark:text-dark-400'
+                    }`}
+                  >
+                    <Repeat size={10} />
+                    {store.contactTouched[c.id]
+                      ? `Last message ${relative(store.contactTouched[c.id])}`
+                      : `Added ${relative(c.created_at)} — no outreach logged`}
+                  </p>
+                );
+              })()}
+
+              <div className="flex items-center gap-1.5 mt-2">
+                <button
+                  onClick={() =>
+                    emitUi({
+                      type: 'open-assistant',
+                      prompt: `Draft a short, warm outreach message to ${c.name}${c.role ? ` (${c.role})` : ''}${
+                        companyOf(c.application_id) ? ` at ${companyOf(c.application_id)}` : ''
+                      }, referencing my actual application.`,
+                    })
+                  }
+                  className="btn-secondary btn-sm flex-1"
+                >
+                  <Sparkles size={12} /> Draft outreach
+                </button>
+                <button
+                  onClick={() => {
+                    touchContact(c.id);
+                    logActivity(`Messaged ${c.name}`, { kind: 'outreach', application_id: c.application_id });
+                    play('click');
+                    toast(`Logged — ${c.name}'s follow-up clock is reset.`, 'success');
+                  }}
+                  className="btn-secondary btn-sm"
+                  title="Record that you messaged them"
+                >
+                  <UserCheck size={12} /> Messaged
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -412,7 +480,72 @@ function ContactsTab({ companyOf }: { companyOf: CompanyOf }) {
 
 function ResumesTab() {
   const store = useStore();
+  const { user } = useAuth();
+  const prefs = usePreferences();
   const [form, setForm] = useState({ label: '', description: '' });
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * Creates a version, and — when a file is attached — uploads the real PDF and
+   * extracts its text.
+   *
+   * The text is what the resume-vs-JD match score reads, so extracting it at
+   * upload time means scoring never has to re-parse a PDF later.
+   */
+  const add = async () => {
+    if (!form.label.trim()) return;
+    setBusy(true);
+    try {
+      let content = '';
+      if (pendingFile) {
+        try {
+          content = await extractTextFromFile(pendingFile);
+        } catch {
+          content = '';
+        }
+      }
+      const version = addResumeVersion({ ...form, content });
+      if (pendingFile && user) {
+        const uploaded = await uploadResumeVersionFile(user.id, version.id, pendingFile);
+        if (uploaded) {
+          // Written straight onto the record so the version owns its file.
+          const { mutate } = await import('../lib/store');
+          mutate(d => {
+            const target = d.resumes.find(r => r.id === version.id);
+            if (target) target.file = uploaded;
+          });
+        } else {
+          toast('The version was saved, but the file upload failed.', 'error');
+        }
+      }
+      setForm({ label: '', description: '' });
+      setPendingFile(null);
+      play('click');
+      toast(
+        pendingFile
+          ? content
+            ? 'Version saved with the file and its extracted text.'
+            : 'Version saved with the file. No text could be extracted, so scoring will need a paste.'
+          : 'Version saved.',
+        'success',
+      );
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Could not save that version.', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openFile = async (path: string) => {
+    const url = await getFileUrl(path, { signed: prefs.signedUrls });
+    if (!url) {
+      toast('Could not produce a link for that file.', 'error');
+      return;
+    }
+    window.open(url, '_blank', 'noopener');
+  };
 
   return (
     <div className="space-y-4">
@@ -429,17 +562,38 @@ function ResumesTab() {
           placeholder="What it targets"
           className="input-field"
         />
-        <button
-          onClick={() => {
-            if (!form.label.trim()) return;
-            addResumeVersion(form);
-            setForm({ label: '', description: '' });
-          }}
-          disabled={!form.label.trim()}
-          className="btn-primary"
-        >
-          <Plus size={15} /> Add
+        <button onClick={() => void add()} disabled={!form.label.trim() || busy} className="btn-primary">
+          {busy ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />} Add
         </button>
+
+        <div className="sm:col-span-3 flex items-center gap-2 flex-wrap">
+          <button onClick={() => fileRef.current?.click()} className="btn-secondary btn-sm">
+            <Upload size={12} /> {pendingFile ? 'Change file' : 'Attach the actual file'}
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".pdf,.txt,.doc,.docx"
+            className="hidden"
+            onChange={e => {
+              setPendingFile(e.target.files?.[0] || null);
+              e.target.value = '';
+            }}
+          />
+          {pendingFile ? (
+            <span className="chip !text-[11px]">
+              {pendingFile.name} · {(pendingFile.size / 1024).toFixed(0)} KB
+              <button onClick={() => setPendingFile(null)} className="text-light-400 hover:text-red-500" aria-label="Remove file">
+                <Trash2 size={10} />
+              </button>
+            </span>
+          ) : (
+            <span className="text-[11px] text-light-500 dark:text-dark-400">
+              Optional — attaching a PDF makes “Backend v3” a real, re-downloadable file, and extracts its text for the
+              match score.
+            </span>
+          )}
+        </div>
       </div>
 
       {store.resumes.length === 0 ? (
@@ -455,13 +609,208 @@ function ResumesTab() {
               <FileText size={15} className="text-light-500 dark:text-dark-400 flex-shrink-0" />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-light-900 dark:text-white">{r.label}</p>
-                <p className="text-[11px] text-light-500 dark:text-dark-400">{r.description || relative(r.created_at)}</p>
+                <p className="text-[11px] text-light-500 dark:text-dark-400">
+                  {r.description || relative(r.created_at)}
+                  {r.content && <span className="ml-1.5 opacity-70">· {r.content.split(/\s+/).length} words of text</span>}
+                </p>
               </div>
-              <button onClick={() => deleteResumeVersion(r.id)} className="text-light-400 hover:text-red-500" aria-label="Delete">
+              {r.file && (
+                <button
+                  onClick={() => void openFile(r.file!.path)}
+                  className="btn-secondary btn-sm !text-[11px]"
+                  title={r.file.name}
+                >
+                  <Download size={11} /> File
+                </button>
+              )}
+              <button
+                onClick={async () => {
+                  if (r.file) await deleteStoredFile(r.file.path);
+                  deleteResumeVersion(r.id);
+                }}
+                className="text-light-400 hover:text-red-500"
+                aria-label="Delete"
+              >
                 <Trash2 size={14} />
               </button>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Merge fields the cover-letter templates understand. */
+const MERGE_FIELDS = ['company', 'role', 'platform', 'hiring_manager', 'date', 'your_name'];
+
+function LettersTab() {
+  const store = useStore();
+  const { applications } = useData();
+  const { user } = useAuth();
+  const [form, setForm] = useState({ name: '', body: '' });
+  const [editing, setEditing] = useState<CoverTemplate | null>(null);
+  const [previewFor, setPreviewFor] = useState<Record<string, string>>({});
+
+  /**
+   * Fills a template for one application.
+   *
+   * Uses the same `{{field}}` convention the automation engine already
+   * interpolates for rule text, so there is one placeholder syntax in the app
+   * rather than two.
+   */
+  const fill = (body: string, applicationId: string): string => {
+    const app = applications.find(a => a.id === applicationId);
+    const values: Record<string, string> = {
+      company: app?.company_name || '',
+      role: app?.role_applied_to || '',
+      platform: app?.platform_applied_on || '',
+      hiring_manager:
+        store.contacts.find(c => c.application_id === applicationId && /recruit|hiring|manager|talent/i.test(c.role))?.name ||
+        'Hiring Manager',
+      date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+      your_name: (user?.user_metadata?.name as string) || '',
+    };
+    return body.replace(/\{\{(\w+)\}\}/g, (_, key: string) => values[key] ?? `{{${key}}}`);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="card p-3 space-y-2">
+        <input
+          value={editing ? editing.name : form.name}
+          onChange={e =>
+            editing ? setEditing({ ...editing, name: e.target.value }) : setForm({ ...form, name: e.target.value })
+          }
+          placeholder="Template name — e.g. Backend intern, warm referral"
+          className="input-field"
+        />
+        <textarea
+          value={editing ? editing.body : form.body}
+          onChange={e =>
+            editing ? setEditing({ ...editing, body: e.target.value }) : setForm({ ...form, body: e.target.value })
+          }
+          rows={7}
+          placeholder={'Dear {{hiring_manager}},\n\nI am applying for the {{role}} role at {{company}}…'}
+          className="input-field font-mono !text-xs leading-relaxed"
+        />
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => {
+              if (editing) {
+                updateCoverTemplate(editing.id, { name: editing.name, body: editing.body });
+                setEditing(null);
+                toast('Template updated.', 'success');
+                return;
+              }
+              if (!form.name.trim() || !form.body.trim()) return;
+              addCoverTemplate({ name: form.name.trim(), body: form.body });
+              setForm({ name: '', body: '' });
+              toast('Template saved.', 'success');
+            }}
+            disabled={editing ? !editing.name.trim() : !form.name.trim() || !form.body.trim()}
+            className="btn-primary btn-sm"
+          >
+            <Plus size={13} /> {editing ? 'Save changes' : 'Save template'}
+          </button>
+          {editing && (
+            <button onClick={() => setEditing(null)} className="btn-ghost btn-sm">
+              Cancel
+            </button>
+          )}
+          <span className="text-[11px] text-light-500 dark:text-dark-400 inline-flex items-center gap-1">
+            <Braces size={11} /> Merge fields:
+            {MERGE_FIELDS.map(field => (
+              <button
+                key={field}
+                onClick={() => {
+                  const insert = `{{${field}}}`;
+                  if (editing) setEditing({ ...editing, body: `${editing.body}${insert}` });
+                  else setForm(prev => ({ ...prev, body: `${prev.body}${insert}` }));
+                }}
+                className="font-mono text-[10px] px-1 py-0.5 rounded bg-light-200 dark:bg-dark-800 hover:text-primary-600 dark:hover:text-primary-400"
+              >
+                {field}
+              </button>
+            ))}
+          </span>
+        </div>
+      </div>
+
+      {store.coverTemplates.length === 0 ? (
+        <EmptyState
+          icon={MessageSquare}
+          title="No cover-letter templates"
+          hint="Write one with {{company}} and {{role}} placeholders, then fill it for any application in one click instead of rewriting it."
+        />
+      ) : (
+        <div className="space-y-3">
+          {store.coverTemplates.map(template => {
+            const selected = previewFor[template.id] || '';
+            const filled = selected ? fill(template.body, selected) : '';
+            return (
+              <div key={template.id} className="card p-4">
+                <div className="flex items-start gap-3 mb-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-light-900 dark:text-white">{template.name}</p>
+                    <p className="text-[11px] text-light-500 dark:text-dark-400">{relative(template.created_at)}</p>
+                  </div>
+                  <button onClick={() => setEditing(template)} className="btn-ghost btn-sm !px-2">
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => deleteCoverTemplate(template.id)}
+                    className="text-light-400 hover:text-red-500"
+                    aria-label="Delete template"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 mb-2">
+                  <select
+                    value={selected}
+                    onChange={e => setPreviewFor(prev => ({ ...prev, [template.id]: e.target.value }))}
+                    className="input-field !py-1.5 !text-xs"
+                  >
+                    <option value="">Fill for…</option>
+                    {applications.map(app => (
+                      <option key={app.id} value={app.id}>
+                        {app.company_name}
+                        {app.role_applied_to ? ` — ${app.role_applied_to}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {filled && (
+                    <>
+                      <button
+                        onClick={() => {
+                          void navigator.clipboard.writeText(filled);
+                          toast('Filled letter copied.', 'success');
+                        }}
+                        className="btn-secondary btn-sm"
+                      >
+                        <Copy size={12} /> Copy
+                      </button>
+                      <button
+                        onClick={() => {
+                          addNote({ application_id: selected, body: `**${template.name}**\n\n${filled}` });
+                          toast('Saved as a note on that application.', 'success');
+                        }}
+                        className="btn-secondary btn-sm"
+                      >
+                        <StickyNote size={12} /> Save as note
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                <pre className="text-[11.5px] leading-relaxed whitespace-pre-wrap font-sans text-light-800 dark:text-dark-100 p-3 rounded-xl bg-light-200/60 dark:bg-dark-900 border border-light-300 dark:border-dark-800 max-h-56 overflow-y-auto">
+                  {filled || template.body}
+                </pre>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

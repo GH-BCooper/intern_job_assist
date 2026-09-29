@@ -1,11 +1,25 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Star } from 'lucide-react';
 import type { Application, InterviewDate } from '../../lib/supabase';
-import { stageOf } from '../../lib/insights';
+import { stageLabel, stageOf } from '../../lib/insights';
 import { useStore } from '../../hooks/useStore';
 import { toggleStar } from '../../lib/store';
 import { fmtDate, ts } from '../../lib/format';
-import { RESPONSE_BADGE, StageDot } from '../ApplicationCard';
+import { PriorityFlames, RESPONSE_BADGE, StageDot } from '../ApplicationCard';
+
+/**
+ * Windowing thresholds.
+ *
+ * Under `VIRTUALIZE_ABOVE` rows the table renders normally — windowing costs
+ * more than it saves, and a plain table prints and searches better. Past it,
+ * only a visible slice is mounted, with spacer rows holding the scroll height,
+ * which keeps render cost flat for someone with hundreds of applications. Doing
+ * it by hand avoids adding a virtualisation dependency for one screen.
+ */
+const VIRTUALIZE_ABOVE = 80;
+const ROW_HEIGHT = 41;
+const VIEWPORT_HEIGHT = 620;
+const OVERSCAN = 8;
 
 type Props = {
   applications: Application[];
@@ -16,7 +30,7 @@ type Props = {
   onToggleSelectAll?: (ids: string[]) => void;
 };
 
-type SortKey = 'company' | 'role' | 'platform' | 'applied' | 'status' | 'stage' | 'interview';
+type SortKey = 'company' | 'role' | 'platform' | 'applied' | 'status' | 'stage' | 'interview' | 'priority';
 
 const COLUMNS: { key: SortKey; label: string; className?: string }[] = [
   { key: 'company', label: 'Company' },
@@ -26,6 +40,7 @@ const COLUMNS: { key: SortKey; label: string; className?: string }[] = [
   { key: 'status', label: 'Response', className: 'hidden sm:table-cell' },
   { key: 'stage', label: 'Stage' },
   { key: 'interview', label: 'Next interview', className: 'hidden lg:table-cell' },
+  { key: 'priority', label: 'Priority', className: 'hidden xl:table-cell' },
 ];
 
 export default function TableView({
@@ -54,6 +69,8 @@ export default function TableView({
           return stageOf(a, store.stageOverrides);
         case 'interview':
           return ts(interviewsMap[a.id]?.[0]?.interview_date) || Number.MAX_SAFE_INTEGER;
+        case 'priority':
+          return store.priorities[a.id] || 0;
         default:
           return ts(a.date_applied || a.created_at);
       }
@@ -64,17 +81,40 @@ export default function TableView({
       if (va === vb) return 0;
       return (va > vb ? 1 : -1) * sort.dir;
     });
-  }, [applications, sort, store.stageOverrides, interviewsMap]);
+  }, [applications, sort, store.stageOverrides, store.priorities, interviewsMap]);
+
+  /* ---------------------------- virtualisation ---------------------------- */
+
+  const virtualized = rows.length > VIRTUALIZE_ABOVE;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+
+  // A sort change can leave the viewport past the end of a shorter list.
+  useEffect(() => {
+    if (!virtualized) setScrollTop(0);
+  }, [virtualized, rows.length]);
+
+  const visibleCount = Math.ceil(VIEWPORT_HEIGHT / ROW_HEIGHT) + OVERSCAN * 2;
+  const startIndex = virtualized ? Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN) : 0;
+  const endIndex = virtualized ? Math.min(rows.length, startIndex + visibleCount) : rows.length;
+  const visibleRows = virtualized ? rows.slice(startIndex, endIndex) : rows;
+  const padTop = startIndex * ROW_HEIGHT;
+  const padBottom = Math.max(0, (rows.length - endIndex) * ROW_HEIGHT);
 
   const toggle = (key: SortKey) =>
     setSort(s => (s.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: key === 'applied' ? -1 : 1 }));
 
   return (
     <div className="card overflow-hidden">
-      <div className="overflow-x-auto">
+      <div
+        ref={scrollRef}
+        onScroll={virtualized ? e => setScrollTop(e.currentTarget.scrollTop) : undefined}
+        className="overflow-x-auto"
+        style={virtualized ? { maxHeight: VIEWPORT_HEIGHT, overflowY: 'auto' } : undefined}
+      >
         <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-light-300 dark:border-dark-800 bg-light-200/60 dark:bg-dark-900/60">
+          <thead className={virtualized ? 'sticky top-0 z-10' : ''}>
+            <tr className="border-b border-light-300 dark:border-dark-800 bg-light-200/95 dark:bg-dark-900/95 backdrop-blur-sm">
               {onToggleSelectAll && (
                 <th className="w-9 px-2">
                   <input
@@ -102,7 +142,12 @@ export default function TableView({
             </tr>
           </thead>
           <tbody className="divide-y divide-light-300 dark:divide-dark-800">
-            {rows.map(app => {
+            {padTop > 0 && (
+              <tr aria-hidden style={{ height: padTop }}>
+                <td colSpan={COLUMNS.length + 2} />
+              </tr>
+            )}
+            {visibleRows.map(app => {
               const next = interviewsMap[app.id]?.find(i => ts(i.interview_date) >= Date.now() - 86_400_000);
               const starred = store.starred.includes(app.id);
               return (
@@ -154,17 +199,37 @@ export default function TableView({
                     </span>
                   </td>
                   <td className="px-3 py-2.5 whitespace-nowrap">
-                    <StageDot stage={stageOf(app, store.stageOverrides)} />
+                    <StageDot
+                      stage={stageOf(app, store.stageOverrides)}
+                      label={stageLabel(stageOf(app, store.stageOverrides), store.preferences)}
+                    />
                   </td>
                   <td className="px-3 py-2.5 text-light-600 dark:text-dark-300 hidden lg:table-cell whitespace-nowrap">
                     {next ? fmtDate(next.interview_date, { month: 'short', day: 'numeric' }) : '—'}
                   </td>
+                  <td className="px-3 py-2.5 hidden xl:table-cell whitespace-nowrap">
+                    {store.priorities[app.id] ? (
+                      <PriorityFlames value={store.priorities[app.id]} />
+                    ) : (
+                      <span className="text-light-400 dark:text-dark-600">—</span>
+                    )}
+                  </td>
                 </tr>
               );
             })}
+            {padBottom > 0 && (
+              <tr aria-hidden style={{ height: padBottom }}>
+                <td colSpan={COLUMNS.length + 2} />
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
+      {virtualized && (
+        <p className="px-3 py-1.5 text-[10.5px] text-light-500 dark:text-dark-400 border-t border-light-300 dark:border-dark-800">
+          Showing rows {startIndex + 1}–{endIndex} of {rows.length} — the rest mount as you scroll.
+        </p>
+      )}
     </div>
   );
 }

@@ -1,18 +1,24 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowUp,
   Bell,
   BarChart3,
   ChevronDown,
+  Columns2,
   Cpu,
+  ImagePlus,
   KeyRound,
   Loader2,
   Mail,
   MessageSquarePlus,
+  Mic,
+  MicOff,
   Sparkles,
+  Square,
   Target,
   Trash2,
+  Volume2,
   Wand2,
   Wrench,
   X,
@@ -21,9 +27,26 @@ import {
 import { useAI } from '../context/AIContext';
 import { QUICK_PROMPTS } from '../lib/ai/agent';
 import { WRITE_TOOLS } from '../lib/ai/tools';
+import { PROVIDERS, type ImageAttachment } from '../lib/ai/providers';
 import Markdown from './ui/Markdown';
 import { relative } from '../lib/format';
-import { onUi } from '../lib/uiBus';
+import { onUi, toast } from '../lib/uiBus';
+import { dictationSupported, isSpeaking, speak, speechSupported, startDictation, stopSpeaking, type Dictation } from '../lib/speech';
+import type { AiProviderId } from '../lib/store';
+
+/** Images are inlined as base64, so they have to stay small. */
+const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+
+async function toAttachment(file: File): Promise<ImageAttachment> {
+  if (file.size > MAX_IMAGE_BYTES) throw new Error('That image is over 3 MB — crop or compress it first.');
+  const data = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
+    reader.onerror = () => reject(new Error('Could not read that image.'));
+    reader.readAsDataURL(file);
+  });
+  return { mimeType: file.type || 'image/png', data };
+}
 
 const ICONS: Record<string, typeof Sparkles> = {
   sparkles: Sparkles,
@@ -82,8 +105,17 @@ export default function AssistantPanel() {
   const ai = useAI();
   const [draft, setDraft] = useState('');
   const [showThreads, setShowThreads] = useState(false);
+  const [images, setImages] = useState<ImageAttachment[]>([]);
+  const [listening, setListening] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const [compare, setCompare] = useState<{ provider: AiProviderId; text: string } | null>(null);
+  const [comparing, setComparing] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const imageRef = useRef<HTMLInputElement>(null);
+  const dictation = useRef<Dictation | null>(null);
+  /** Text already in the box when dictation started, so interim results append. */
+  const dictationBase = useRef('');
 
   useEffect(
     () =>
@@ -104,7 +136,94 @@ export default function AssistantPanel() {
 
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' });
-  }, [ai.activeThread?.messages.length, ai.busy]);
+  }, [ai.activeThread?.messages.length, ai.busy, ai.streaming]);
+
+  // Dictation must not outlive the panel.
+  useEffect(
+    () => () => {
+      dictation.current?.stop();
+      stopSpeaking();
+    },
+    [],
+  );
+
+  /** Dictate into the composer with the browser's own speech recognition. */
+  const toggleDictation = useCallback(() => {
+    if (listening) {
+      dictation.current?.stop();
+      dictation.current = null;
+      setListening(false);
+      return;
+    }
+    dictationBase.current = draft ? `${draft.trim()} ` : '';
+    const session = startDictation(
+      (transcript, isFinal) => {
+        setDraft(`${dictationBase.current}${transcript}`);
+        if (isFinal) dictationBase.current = `${dictationBase.current}${transcript} `;
+      },
+      {
+        onError: message => {
+          toast(message, 'error');
+          setListening(false);
+        },
+        onEnd: () => setListening(false),
+      },
+    );
+    if (!session) {
+      toast('This browser has no speech recognition. Chrome and Edge do.', 'error');
+      return;
+    }
+    dictation.current = session;
+    setListening(true);
+  }, [listening, draft]);
+
+  const readAloud = useCallback((text: string) => {
+    if (isSpeaking()) {
+      stopSpeaking();
+      setSpeaking(false);
+      return;
+    }
+    const started = speak(text);
+    setSpeaking(started);
+    if (!started) toast('This browser cannot read text aloud.', 'error');
+  }, []);
+
+  const addImages = useCallback(async (files: FileList | File[]) => {
+    const picked = [...files].filter(file => file.type.startsWith('image/')).slice(0, 3);
+    if (!picked.length) return;
+    if (!ai.visionSupported) {
+      toast(`${PROVIDERS[ai.usage.provider].label} does not take images. Gemini's free tier does.`, 'error');
+      return;
+    }
+    try {
+      const attachments = await Promise.all(picked.map(toAttachment));
+      setImages(prev => [...prev, ...attachments].slice(0, 3));
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Could not attach that image.', 'error');
+    }
+  }, [ai.visionSupported, ai.usage.provider]);
+
+  /** Re-runs the last prompt on a second configured provider, side by side. */
+  const runCompare = useCallback(
+    async (provider: AiProviderId) => {
+      const lastUser = [...(ai.activeThread?.messages || [])].reverse().find(m => m.role === 'user');
+      if (!lastUser) {
+        toast('Ask something first, then compare the answers.', 'info');
+        return;
+      }
+      setComparing(true);
+      setCompare(null);
+      try {
+        const text = await ai.askWithProvider(provider, lastUser.content);
+        setCompare({ provider, text });
+      } catch (e) {
+        toast(e instanceof Error ? e.message : 'That provider could not answer.', 'error');
+      } finally {
+        setComparing(false);
+      }
+    },
+    [ai],
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -120,9 +239,18 @@ export default function AssistantPanel() {
 
   const submit = () => {
     const text = draft.trim();
-    if (!text || ai.busy) return;
+    if ((!text && !images.length) || ai.busy) return;
+    if (listening) {
+      dictation.current?.stop();
+      setListening(false);
+    }
     setDraft('');
-    void ai.send(text);
+    const attached = images;
+    setImages([]);
+    setCompare(null);
+    void ai.send(text || 'Read this job posting and extract the application details.', {
+      images: attached.length ? attached : undefined,
+    });
   };
 
   const messages = ai.activeThread?.messages || [];
@@ -160,8 +288,44 @@ export default function AssistantPanel() {
                 <p className="font-semibold text-sm text-light-900 dark:text-white leading-tight">Scout</p>
                 <p className="text-[10px] text-light-500 dark:text-dark-400 truncate flex items-center gap-1">
                   <Cpu size={9} /> {ai.providerLabel}
+                  {ai.usage.limit && (
+                    <span
+                      className={ai.usage.warn ? 'text-amber-600 dark:text-amber-400 font-semibold' : ''}
+                      title={`${ai.usage.used} of ${ai.usage.limit} free requests used today`}
+                    >
+                      · {ai.usage.used}/{ai.usage.limit}
+                    </span>
+                  )}
                 </p>
               </div>
+              {ai.availableProviders.length > 1 && (
+                <div className="relative">
+                  <select
+                    value=""
+                    onChange={e => {
+                      const value = e.target.value as AiProviderId;
+                      if (value) void runCompare(value);
+                      e.target.value = '';
+                    }}
+                    disabled={comparing || ai.busy}
+                    title="Re-run the last prompt on another provider"
+                    aria-label="Compare providers"
+                    className="appearance-none w-8 h-8 rounded-lg opacity-0 absolute inset-0 cursor-pointer"
+                  >
+                    <option value="">Compare with…</option>
+                    {ai.availableProviders
+                      .filter(p => p !== ai.usage.provider)
+                      .map(p => (
+                        <option key={p} value={p}>
+                          {PROVIDERS[p].label}
+                        </option>
+                      ))}
+                  </select>
+                  <span className="btn-ghost btn-icon pointer-events-none">
+                    {comparing ? <Loader2 size={15} className="animate-spin" /> : <Columns2 size={15} />}
+                  </span>
+                </div>
+              )}
               <button onClick={() => setShowThreads(s => !s)} className="btn-ghost btn-icon" title="Conversations">
                 <MessageSquarePlus size={16} />
               </button>
@@ -280,22 +444,99 @@ export default function AssistantPanel() {
                     <div className="min-w-0 flex-1">
                       <Markdown text={m.content} className="text-light-800 dark:text-dark-100" />
                       <ToolTrace traces={m.toolCalls || []} />
+                      {speechSupported() && m.content.length > 40 && (
+                        <button
+                          onClick={() => readAloud(m.content)}
+                          className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-light-500 dark:text-dark-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+                        >
+                          {speaking ? <Square size={10} /> : <Volume2 size={11} />}
+                          {speaking ? 'Stop' : 'Read aloud'}
+                        </button>
+                      )}
                     </div>
                   </div>
                 ),
               )}
 
-              {ai.busy && (
+              {/* the in-flight reply, token by token */}
+              {ai.streaming && (
+                <div className="flex gap-2.5 animate-fade-in">
+                  <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-primary-500 to-accent-500 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <Sparkles size={12} className="text-white" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <Markdown text={ai.streaming} className="text-light-800 dark:text-dark-100" />
+                    <span className="inline-block w-1.5 h-3.5 align-middle bg-primary-500 animate-pulse ml-0.5" />
+                  </div>
+                </div>
+              )}
+
+              {ai.busy && !ai.streaming && (
                 <div className="flex items-center gap-2.5 text-xs text-light-600 dark:text-dark-300 animate-fade-in">
                   <Loader2 size={14} className="animate-spin text-primary-500" />
                   {ai.status || 'Thinking…'}
+                </div>
+              )}
+
+              {compare && (
+                <div className="panel p-3 border-sky-300 dark:border-sky-900 bg-sky-50/70 dark:bg-sky-950/20 animate-slide-up">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <Columns2 size={12} className="text-sky-600 dark:text-sky-400" />
+                    <p className="text-[11px] font-semibold text-sky-800 dark:text-sky-200 flex-1">
+                      {PROVIDERS[compare.provider].label}&rsquo;s answer to the same prompt
+                    </p>
+                    <button onClick={() => setCompare(null)} className="text-sky-600/70 hover:text-sky-800 dark:hover:text-sky-200">
+                      <X size={12} />
+                    </button>
+                  </div>
+                  <Markdown text={compare.text} className="text-light-800 dark:text-dark-100" />
                 </div>
               )}
             </div>
 
             {/* composer */}
             <div className="border-t border-light-300 dark:border-dark-800 p-3 flex-shrink-0">
-              <div className="relative">
+              {images.length > 0 && (
+                <div className="flex items-center gap-2 mb-2">
+                  {images.map((img, i) => (
+                    <span key={i} className="relative">
+                      <img
+                        src={`data:${img.mimeType};base64,${img.data}`}
+                        alt=""
+                        className="w-12 h-12 rounded-lg object-cover border border-light-300 dark:border-dark-700"
+                      />
+                      <button
+                        onClick={() => setImages(prev => prev.filter((_, index) => index !== i))}
+                        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-light-900 dark:bg-dark-50 text-light-50 dark:text-dark-950 flex items-center justify-center"
+                        aria-label="Remove image"
+                      >
+                        <X size={9} />
+                      </button>
+                    </span>
+                  ))}
+                  <span className="text-[10px] text-light-500 dark:text-dark-400">
+                    Scout will read the posting out of the screenshot.
+                  </span>
+                </div>
+              )}
+
+              <div
+                className="relative"
+                onPaste={e => {
+                  const files = [...(e.clipboardData?.files || [])];
+                  if (files.some(file => file.type.startsWith('image/'))) {
+                    e.preventDefault();
+                    void addImages(files);
+                  }
+                }}
+                onDragOver={e => e.preventDefault()}
+                onDrop={e => {
+                  if (e.dataTransfer?.files?.length) {
+                    e.preventDefault();
+                    void addImages(e.dataTransfer.files);
+                  }
+                }}
+              >
                 <textarea
                   ref={inputRef}
                   value={draft}
@@ -307,20 +548,64 @@ export default function AssistantPanel() {
                     }
                   }}
                   rows={2}
-                  placeholder="Ask anything, or tell me what to do…"
-                  className="input-field resize-none pr-11 py-3 max-h-40"
+                  placeholder={listening ? 'Listening…' : 'Ask anything, or tell me what to do…'}
+                  className="input-field resize-none pr-[5.5rem] py-3 max-h-40"
                 />
-                <button
-                  onClick={submit}
-                  disabled={!draft.trim() || ai.busy}
-                  className="absolute right-2 bottom-2.5 w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-accent-500 text-white flex items-center justify-center disabled:opacity-40 transition-opacity"
-                  aria-label="Send"
-                >
-                  {ai.busy ? <Loader2 size={15} className="animate-spin" /> : <ArrowUp size={16} />}
-                </button>
+
+                <div className="absolute right-2 bottom-2.5 flex items-center gap-1">
+                  {ai.visionSupported && (
+                    <>
+                      <button
+                        onClick={() => imageRef.current?.click()}
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-light-500 dark:text-dark-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+                        title="Attach a screenshot of a job posting"
+                        aria-label="Attach an image"
+                      >
+                        <ImagePlus size={16} />
+                      </button>
+                      <input
+                        ref={imageRef}
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={e => {
+                          if (e.target.files?.length) void addImages(e.target.files);
+                          e.target.value = '';
+                        }}
+                      />
+                    </>
+                  )}
+
+                  {dictationSupported() && (
+                    <button
+                      onClick={toggleDictation}
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
+                        listening
+                          ? 'bg-accent-500 text-white'
+                          : 'text-light-500 dark:text-dark-400 hover:text-primary-600 dark:hover:text-primary-400'
+                      }`}
+                      title={listening ? 'Stop dictating' : 'Dictate a message'}
+                      aria-label={listening ? 'Stop dictating' : 'Dictate a message'}
+                      aria-pressed={listening}
+                    >
+                      {listening ? <MicOff size={16} /> : <Mic size={16} />}
+                    </button>
+                  )}
+
+                  <button
+                    onClick={submit}
+                    disabled={(!draft.trim() && !images.length) || ai.busy}
+                    className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-accent-500 text-white flex items-center justify-center disabled:opacity-40 transition-opacity"
+                    aria-label="Send"
+                  >
+                    {ai.busy ? <Loader2 size={15} className="animate-spin" /> : <ArrowUp size={16} />}
+                  </button>
+                </div>
               </div>
               <p className="text-[10px] text-light-500 dark:text-dark-500 mt-1.5 px-1">
                 Enter to send · Shift+Enter for a new line · ⌘J to toggle
+                {ai.visionSupported && ' · paste or drop a screenshot'}
               </p>
             </div>
           </aside>

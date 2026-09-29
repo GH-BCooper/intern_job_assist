@@ -1,5 +1,23 @@
 # InternTrack — Roadmap: Features, Integrations & a v4 UI Vision
 
+> ## ✅ Built — see [versionFour.md](versionFour.md)
+>
+> This document has been worked through. **Every section from §1 to §15 has
+> shipped**, including all ten items in §16 and the full UI vision. §17 stayed
+> excluded, on purpose.
+>
+> Three things still need a human, because they need credentials this repo does
+> not hold: applying `supabase/migrations/20260929000001_add_shared_dashboards.sql`
+> for share links, deploying `supabase/functions/calendar-feed` for a
+> *subscribable* calendar (the one-time `.ics` export works today), and dropping
+> three PNGs into `extension/` to silence an icon warning. Everything else is
+> live, and [versionFour.md](versionFour.md) maps each section below to where it
+> landed in the code.
+>
+> The rest of this document is kept as written, as the record of the thinking.
+
+---
+
 This is a brainstorm, not a commitment — a wide net of everything InternTrack could
 become next, written after a full pass over the current codebase (v3: Kanban board,
 Scout the AI assistant with 34 tools, the automation engine, insights, calendar,

@@ -491,7 +491,20 @@ export type StageFlow = {
  */
 export function stageFlow(history: StageChange[], byStage: Record<string, number>): StageFlow {
   const map = new Map<string, FlowLink>();
-  const rank = (s: string) => STAGES.indexOf(s as Stage);
+
+  /**
+   * Progress rank, which is not the same as position in STAGES.
+   *
+   * `Closed` sits last in the canonical list but is a terminal *negative*
+   * outcome, so anything landing there from an active stage is a regression —
+   * Interviewing → Closed is the single most informative edge in the chart, and
+   * index order alone would draw it as forward progress.
+   */
+  const progress = (stage: string): number => {
+    if (stage === 'Closed') return -1;
+    const index = STAGES.indexOf(stage as Stage);
+    return index < 0 ? 0 : index;
+  };
 
   history.forEach(h => {
     const from = h.from || 'Wishlist';
@@ -500,7 +513,7 @@ export function stageFlow(history: StageChange[], byStage: Record<string, number
     const key = `${from}→${to}`;
     const existing = map.get(key);
     if (existing) existing.count += 1;
-    else map.set(key, { from, to, count: 1, backward: rank(to) >= 0 && rank(from) >= 0 && rank(to) < rank(from) });
+    else map.set(key, { from, to, count: 1, backward: progress(to) < progress(from) });
   });
 
   const links = [...map.values()].sort((a, b) => b.count - a.count);

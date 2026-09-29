@@ -4,29 +4,39 @@ A full internship-search workspace: track applications, interview rounds and lea
 
 Built with React, TypeScript and Supabase — and designed so that running it costs nothing.
 
-**[Live Demo](https://intern-job-assist.vercel.app)** · **[What's new in v2](versionTwo.md)** · **[Report Bug](https://github.com/GH-BCooper/intern_job_assist/issues)**
+**[Live Demo](https://intern-job-assist.vercel.app)** · **[What's new in v4](versionFour.md)** · **[Roadmap](ROADMAP.md)** · **[Report Bug](https://github.com/GH-BCooper/intern_job_assist/issues)**
 
 ## Features
 
-- ✨ **Scout, the AI assistant** - 34 tools give it real read/write access: add and update applications, move pipeline stages, schedule follow-ups, run analytics, draft emails, even drive the interface. Runs on your own free-tier key (Gemini, Groq, OpenRouter) or a local Ollama model.
-- 🗂️ **Kanban pipeline** - Drag applications across Wishlist → Applied → In Review → Interviewing → Offer → Closed, with statuses kept in sync.
-- 🔭 **Four views** - Board, Cards, sortable Table and Timeline, with saveable filter views.
-- 📊 **Insights** - Conversion funnel, per-platform interview rates, 12-week cadence, activity heatmap, streaks, momentum score and goal tracking.
-- 🔔 **Follow-ups that fire** - Quiet applications get flagged, reminders arrive as native browser notifications, interviews count down.
-- 🗓️ **Calendar** - Interviews, reminders and application dates on one month view.
-- 🧰 **Workspace** - Tasks, reminders, markdown notes, contacts, resume versions, tags and an activity log.
-- ⌘ **Command palette** - ⌘K to jump to any application, page, view or action.
-- 📅 **Interview rounds** - Multiple rounds per application with countdown timers.
-- 📄 **Documents** - Upload resumes and cover letters, with PDF text extraction.
-- 💾 **Exports** - PDF, DOCX, CSV, JSON and bulk ZIP with attachments; JSON import.
-- 📲 **Installable PWA** - Works offline via a service worker.
+- ✨ **Scout, the AI assistant** - 46 tools give it real read/write access: add and update applications, move pipeline stages, schedule follow-ups, run analytics, draft emails, score your resume, build automations, even drive the interface. Streams its replies, takes voice input, reads answers aloud, and can read a screenshot of a job posting. Runs on your own free-tier key (Gemini, Groq, OpenRouter) or a local Ollama model.
+- 🗂️ **Kanban pipeline** - Drag applications across Wishlist → Applied → In Review → Interviewing → Offer → Closed, with statuses kept in sync. Fully keyboard-operable, with swimlanes, soft WIP limits, and stages you can rename and reorder.
+- 🔭 **Four views** - Board, Cards, sortable Table and Timeline, with saveable filter views. The table virtualises past 80 rows.
+- 📊 **Insights** - Conversion funnel, a stage-flow Sankey that shows the backward moves a funnel can't, per-platform interview rates, 12-week cadence, day-of-week patterns, an offer projection, a momentum breakdown, activity heatmap, streaks and goal tracking.
+- ↩️ **Undo** - Delete, archive and every stage move can be taken back from the toast.
+- 📶 **Genuinely offline** - Writes made offline are queued in IndexedDB and flushed in order on reconnect, not lost.
+- 🧠 **Prep trainer** - Your recorded interview questions become spaced-repetition flashcards (SM-2), alongside a reusable STAR story bank and a mock-interview mode.
+- 🎯 **Resume ↔ job-description match** - A local keyword-coverage score naming what the posting leans on that your resume never says. No API, no upload.
+- ⚡ **Automations** - 11 triggers, 12 actions, AND/OR conditions, quiet hours, a dry-run preview and 16 one-click templates. Runs entirely in your browser.
+- 🔔 **Follow-ups that fire** - Quiet applications get flagged, reminders arrive as native browser notifications and can recur, interviews count down.
+- 🗓️ **Calendar** - Interviews, reminders and application dates on one month view, plus .ics export into Google, Apple or Outlook.
+- 🧰 **Workspace** - Tasks, reminders, markdown notes, contacts, resume versions with real files, cover-letter merge templates, tags and an activity log.
+- ⌘ **Command palette** - ⌘K to jump to any application, page, view or action — or type a question and get an inline answer.
+- 🎨 **Make it yours** - Five accent palettes swapped at runtime, a high-contrast variant, a base font-size slider, optional interface sounds and a guided first run.
+- 🏆 **Momentum** - Achievement badges, a shareable Weekly Wrapped card, confetti on an offer, and a persistent "now" strip showing the single most relevant thing.
+- 🔗 **Share read-only** - A link to your aggregate insights for a mentor or career centre. Never the applications themselves.
+- 📅 **Interview rounds** - Multiple rounds per application with countdown timers and per-round timezones.
+- 📄 **Documents** - Upload resumes and cover letters with PDF text extraction, served through time-limited signed URLs.
+- 💾 **Exports & imports** - PDF, one-pager briefs, DOCX, CSV, JSON, .ics, a self-contained HTML portfolio and bulk ZIP; import from Huntr, Teal, Simplify or LinkedIn.
+- 🔌 **Add from anywhere** - A bookmarklet that needs no extension store, or an unpacked browser extension.
+- 🔐 **Privacy** - Optional AES-GCM encryption of local fields via Web Crypto, idle auto-lock, TOTP two-factor login, and a one-button data wipe.
+- 📲 **Installable PWA** - Works offline via a service worker, with background sync where the browser supports it.
 - 🌙 **Light & dark** - A bright, warm light mode and a low-glare dark mode.
 - 🔐 **Secure authentication** - Email/password and Google sign-in via Supabase.
 - 📱 **Responsive** - Desktop, tablet and mobile.
 
 ## Cost
 
-Every layer runs on a permanent free tier — Vercel Hobby, the Supabase free tier, your own free AI key (or local Ollama), hand-rolled SVG charts and native browser notifications. There is no paid dependency anywhere in the stack.
+Every layer runs on a permanent free tier — Vercel Hobby, the Supabase free tier, your own free AI key (or local Ollama), hand-rolled SVG charts, and native browser APIs for notifications, speech, audio, crypto and storage. There is no paid dependency anywhere in the stack, and [ROADMAP.md](ROADMAP.md) lists the handful of ideas that *cannot* be done for free, excluded on purpose so they don't get built by accident.
 
 ## Tech Stack
 
@@ -38,9 +48,11 @@ Every layer runs on a permanent free tier — Vercel Hobby, the Supabase free ti
 - **Lucide React** - Icons
 
 ### Backend & Database
-- **Supabase** - PostgreSQL database + authentication
-- **Supabase Storage** - File uploads (resumes, cover letters)
-- **Local-first store** - Tags, reminders, tasks, notes, contacts, goals and AI threads are kept per-user in the browser, so v2 needs no schema change and no extra quota
+- **Supabase** - PostgreSQL database + authentication (email/password, Google, one-time codes, TOTP MFA)
+- **Supabase Storage** - File uploads (resumes, cover letters, resume-version files), served through signed URLs
+- **Supabase Edge Functions** - One optional function, for the subscribable calendar feed
+- **Local-first store** - Tags, reminders, tasks, notes, contacts, goals, prep cards, STAR stories, templates, stage history, seasons and AI threads are kept per-user in the browser, so the whole feature set needs one optional schema change and no extra quota
+- **IndexedDB** - The offline write outbox
 
 ### AI
 - **Google Gemini** - native function calling (`gemini-2.0-flash`)
@@ -54,8 +66,17 @@ Every layer runs on a permanent free tier — Vercel Hobby, the Supabase free ti
 - **file-saver** - File downloads
 - **pdfjs-dist** - PDF text extraction
 
+### Browser APIs used instead of dependencies
+- **Web Speech** - Voice input and spoken replies
+- **Web Audio** - Synthesized interface sounds, so there are no audio files to host
+- **Web Crypto** - AES-GCM vault encryption
+- **Web Workers** - Analytics off the main thread for large histories
+- **Background Sync** - Automation passes when the tab isn't focused
+- **Canvas** - Hand-rolled confetti
+
 ### Build Tools
 - **Vite** - Build tool & dev server
+- **Vitest + Testing Library** - 256 tests
 - **ESLint** - Code linting
 - **PostCSS + Autoprefixer** - CSS processing
 
@@ -150,32 +171,50 @@ The app will be available at `http://localhost:5173`
 
 ```
 src/
-├── components/          # Reusable React components
-│   ├── ApplicationCard.tsx
-│   ├── ApplicationDetail.tsx
-│   ├── ApplicationForm.tsx
-│   ├── Navbar.tsx
-│   └── PrintAllButton.tsx
-├── context/            # React Context (Auth, Theme)
-│   ├── AuthContext.tsx
-│   └── ThemeContext.tsx
-├── pages/              # Page components
-│   ├── Dashboard.tsx
-│   ├── Home.tsx
-│   ├── Login.tsx
-│   └── Register.tsx
+├── components/               # UI
+│   ├── ApplicationCard/Detail/Form.tsx
+│   ├── AssistantPanel.tsx    # Scout: streaming, voice, images, provider A/B
+│   ├── CommandPalette.tsx    # ⌘K, with inline Scout answers
+│   ├── BoardView/TableView/TimelineView (views/)
+│   ├── NowStrip.tsx          # the persistent "most relevant thing" bar
+│   ├── FocusMode.tsx         # distraction-free prep, with a Pomodoro
+│   ├── CompareView.tsx       # side-by-side offer comparison
+│   ├── WrappedCard.tsx       # shareable week in review (PNG)
+│   ├── QuickAdd.tsx          # paste a posting, get a filled form
+│   ├── Onboarding.tsx        # guided first run
+│   ├── LockScreen.tsx        # idle auto-lock
+│   └── ui/                   # BentoTile, Charts, Sankey, JourneyStepper,
+│                             # CompanyLogo, MatchScore, BadgeShelf,
+│                             # AccentPicker, EmptyArt, Toaster, Markdown
+├── context/                  # Auth, Theme (+ accent/contrast/font), Data, AI
+├── pages/                    # Home, Login, Register, ResetPassword, Dashboard,
+│                             # Insights, CalendarPage, Workspace, Prep,
+│                             # Automations, Settings, Shared
+├── hooks/                    # useStore, useAlerts, useAutomations, useAnalytics,
+│                             # useAutoLock, useOnlineStatus, useCooldown
 ├── lib/
-│   └── supabase.ts     # Supabase client & types
-├── utils/              # Utility functions
-│   ├── exportUtils.ts
-│   ├── pdfUtils.ts
-│   └── zipExportUtils.ts
-├── App.tsx             # Main app component
-├── main.tsx            # Entry point
-└── index.css           # Global styles
+│   ├── store.ts              # the local-first store (types + mutations)
+│   ├── insights.ts           # analytics, Sankey, timing, projection, wrapped
+│   ├── automation.ts         # the rules engine
+│   ├── outbox.ts             # IndexedDB offline write queue
+│   ├── undo.ts               # undo stack
+│   ├── ics.ts                # RFC 5545 calendar generation
+│   ├── match.ts              # resume ↔ JD scoring
+│   ├── srs.ts                # SM-2 spaced repetition
+│   ├── badges.ts  accent.ts  fx.ts  vault.ts  speech.ts  i18n.ts
+│   ├── logo.ts  duplicates.ts  importPresets.ts  portfolio.ts  onePager.ts
+│   ├── share.ts  bookmarklet.ts  tips.ts  uiBus.ts  format.ts
+│   ├── analytics.worker.ts   # computeAnalytics off the main thread
+│   ├── ai/                   # agent.ts, providers.ts, tools.ts (46 tools)
+│   └── supabase.ts           # client, types, storage helpers
+├── utils/                    # export, pdf and zip helpers
+├── App.tsx  main.tsx  index.css
+└── *.test.ts(x)              # 256 tests, colocated with what they cover
 
+extension/                    # unpacked MV3 "Add to InternTrack" extension
 supabase/
-└── migrations/         # Database migrations
+├── migrations/               # database migrations
+└── functions/calendar-feed/  # optional subscribable .ics feed
 ```
 
 ## Deployment

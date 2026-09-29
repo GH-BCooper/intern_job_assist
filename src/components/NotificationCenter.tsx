@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Bell, BellOff, CalendarClock, Check, CheckCheck, ClipboardList, Clock, Sparkles } from 'lucide-react';
 import { useAlerts, requestNotificationPermission } from '../hooks/useAlerts';
 import { usePreferences } from '../hooks/useStore';
-import { savePreferences, updateReminder } from '../lib/store';
+import { completeReminder, savePreferences } from '../lib/store';
 import { emitUi, toast } from '../lib/uiBus';
 import { fmtDateTime, relative } from '../lib/format';
 
@@ -110,7 +110,7 @@ export default function NotificationCenter() {
                   {a.reminderId && (
                     <button
                       onClick={() => {
-                        updateReminder(a.reminderId as string, { done: true });
+                        completeReminder(a.reminderId as string);
                         toast('Reminder completed.', 'success');
                       }}
                       className="btn-ghost btn-icon !p-1.5 text-emerald-600 dark:text-emerald-400"
