@@ -6,13 +6,11 @@
 > shipped**, including all ten items in §16 and the full UI vision. §17 stayed
 > excluded, on purpose.
 >
-> Three things still need a human, because they need credentials this repo does
-> not hold: applying `supabase/migrations/20260929000001_add_shared_dashboards.sql`
-> for share links, deploying `supabase/functions/calendar-feed` for a
-> *subscribable* calendar (the one-time `.ics` export works today), and dropping
-> three PNGs into `extension/` to silence an icon warning. Everything else is
-> live, and [versionFour.md](versionFour.md) maps each section below to where it
-> landed in the code.
+> One step still needs a human, because it needs a credential this repo does not
+> hold: a Supabase access token, which unlocks both the share-link migration and
+> the calendar-feed deploy. Everything downstream of it is automated —
+> `npm run setup:supabase -- sbp_your_token`. [versionFour.md](versionFour.md)
+> maps each section below to where it landed in the code.
 >
 > The rest of this document is kept as written, as the record of the thinking.
 

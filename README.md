@@ -119,9 +119,30 @@ The app will be available at `http://localhost:5173`
 
 - `npm run dev` - Start development server
 - `npm run build` - Build for production
-- `npm run preview` - Preview production build locally
+- `npm run preview` - Preview production build locally (port 4173)
 - `npm run lint` - Run ESLint
 - `npm run typecheck` - Run TypeScript type checking
+- `npm test` - Run the test suite (280 tests)
+- `npm run test:coverage` - Tests with a coverage report
+- `npm run test:all` - typecheck + lint + tests + build, in that order
+- `npm run smoke` - Drive the built app in your installed Chrome (run `npm run preview` first)
+- `npm run setup:supabase -- sbp_token` - Apply pending migrations and deploy the calendar feed
+- `npm run icons:extension` - Regenerate the browser extension's icons from the PWA icon
+
+### One-time Supabase setup
+
+Share links and the subscribable calendar feed need one migration and one Edge
+Function. Both are automated behind a single token:
+
+1. Open <https://supabase.com/dashboard/account/tokens> and generate a token
+2. `npm run setup:supabase -- sbp_your_token_here`
+
+It applies every pending migration through the Management API (so no database
+password is needed), verifies the share function actually responds, and deploys
+`calendar-feed`. The token is used for that run only — never written to disk.
+
+Everything else in the app works without this step; share links simply explain
+that they're not set up yet.
 
 ## Database Schema
 

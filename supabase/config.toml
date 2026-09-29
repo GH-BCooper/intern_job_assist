@@ -1,0 +1,12 @@
+# Supabase CLI project config.
+#
+# Only what the CLI needs to deploy from this repo. Local-development settings
+# are deliberately left at their defaults — nothing here runs a local stack.
+
+project_id = "interntrack"
+
+[functions.calendar-feed]
+# Calendar clients cannot send an Authorization header, so the feed is public and
+# scoped by the unguessable token in its query string instead — the same model as
+# a secret Google or iCloud calendar address.
+verify_jwt = false

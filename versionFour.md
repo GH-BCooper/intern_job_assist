@@ -260,11 +260,14 @@ New components: `BentoTile`, `AccentPicker`, `JourneyStepper`, `NowStrip`,
 
 - `npm run typecheck` — clean.
 - `npm run lint` — no errors (ten pre-existing react-refresh warnings).
-- `npm test` — **256 tests**, up from 99.
+- `npm test` — **280 tests**, up from 99.
 - `npm run build` — clean, and the analytics worker bundles separately.
-- A browser smoke test drives the built app in real Chrome: public routes, the
-  runtime accent variables, Tailwind resolving through them, the signed-out
-  redirect, and the shared route's failure path.
+- `npm run smoke` drives the built app in real Chrome via `playwright-core`
+  (no browser download): public routes, the runtime accent variables, Tailwind
+  resolving through them, the signed-out redirect, and the shared route's
+  failure path. 8/8.
+- `src/app.integration.test.tsx` covers the signed-in half against an in-memory
+  Supabase, since a browser run cannot sign in to the hosted project.
 
 Two genuine bugs were caught by the new tests and fixed:
 
@@ -282,20 +285,50 @@ Vitest `globals`), so component tests would have stacked renders in one document
 
 ## What still needs a human
 
-Three things, all because they need credentials this repo does not hold:
+**One paste.** Everything else is done.
 
-1. **Apply the share-link migration.** `supabase/migrations/20260929000001_add_shared_dashboards.sql`
-   creates the table, its RLS policies and the `public_shared_dashboard` function.
-   Until it runs, Settings → Share and `/shared/:token` say so in plain language
-   and everything else is unaffected.
-2. **Deploy the calendar feed** if you want a *subscribable* calendar rather than
-   the one-time export:
-   `supabase functions deploy calendar-feed --no-verify-jwt`.
-   The flag is required because calendar clients cannot send an auth header;
-   security is the unguessable token, as with any secret calendar address.
-3. **Add the extension icons** — `extension/icon-{16,48,128}.png`. The extension
-   loads and works without them; Chromium just substitutes a default and logs a
-   warning.
+The migration and the Edge Function both need a Supabase access token, which only
+the account owner can mint. Everything downstream of that token is automated:
 
-Nothing else is pending, and nothing in v4 changed the applications, interview
-dates or learnings tables.
+```
+1. Open  https://supabase.com/dashboard/account/tokens
+2. "Generate new token", copy it
+3. npm run setup:supabase -- sbp_your_token_here
+```
+
+That script (`scripts/setup-supabase.cjs`) then, on its own:
+
+- reads the project ref out of `.env` and confirms the token can reach it;
+- applies every pending migration through the Management API's query endpoint —
+  so no database password is needed either — keeping a `_interntrack_migrations`
+  ledger so re-runs are safe and already-present objects are recorded rather than
+  treated as failures;
+- probes `public_shared_dashboard` with the anon key to prove share links are
+  actually live;
+- deploys `calendar-feed` with `--no-verify-jwt` (calendar clients cannot send an
+  auth header; security is the unguessable token, as with any secret calendar
+  address);
+- prints exactly what landed.
+
+The token is used for that one run. It is never written to disk and never
+committed.
+
+Until it runs, share links and `/shared/:token` explain themselves in plain
+language and nothing else is affected. Nothing in v4 changed the applications,
+interview dates or learnings tables.
+
+### Already handled
+
+- **Extension icons** — generated from the PWA icon by
+  `npm run icons:extension`, which resizes through the same headless Chrome the
+  smoke test drives, so there is no image-processing dependency. The three PNGs
+  are committed.
+- **Signed-in testing** — the hosted project has email confirmation on, so a
+  browser run cannot reach the signed-in screens. `src/test/fakeSupabase.ts` is
+  an in-memory stand-in for the client (query builders, auth, storage, rpc) and
+  `src/app.integration.test.tsx` mounts the *real* App over it: 24 tests that
+  load the pipeline, open an application, move a stage and assert the write, take
+  the undo, set a priority, walk every route, install an automation and preview
+  its matches, add an AND/OR condition, save and fill a cover-letter template,
+  import prep questions, rename a stage, set a WIP limit and run the first-run
+  wizard.
