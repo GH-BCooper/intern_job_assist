@@ -3,7 +3,7 @@ import { Bell, CalendarClock, ChevronLeft, ChevronRight, Plus, Send, Sparkles } 
 import { useData } from '../context/DataContext';
 import { useStore } from '../hooks/useStore';
 import PageShell from '../components/PageShell';
-import { DAY_MS, dayKey, fmtDate, fmtDateTime, monthLabel, toLocalInput, ts } from '../lib/format';
+import { DAY_MS, addDays, dayKey, fmtDate, fmtDateTime, monthLabel, toLocalInput, ts } from '../lib/format';
 import { addReminder } from '../lib/store';
 import { emitUi, toast } from '../lib/uiBus';
 
@@ -91,8 +91,8 @@ export default function CalendarPage() {
   const grid = useMemo(() => {
     const first = new Date(cursor);
     const offset = (first.getDay() + 6) % 7; // Monday-first
-    const start = new Date(first.getTime() - offset * DAY_MS);
-    return Array.from({ length: 42 }, (_, i) => new Date(start.getTime() + i * DAY_MS));
+    const start = addDays(first, -offset);
+    return Array.from({ length: 42 }, (_, i) => addDays(start, i));
   }, [cursor]);
 
   const upcoming = useMemo(

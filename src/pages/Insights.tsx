@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -27,6 +27,7 @@ import {
   offerProjection,
   periodComparisons,
   stageFlow,
+  stageLabel,
   timingInsight,
   weeklyWrapped,
 } from '../lib/insights';
@@ -109,6 +110,7 @@ export default function Insights() {
   const badges = useMemo(() => computeBadges(a, store), [a, store]);
   const wrapped = useMemo(() => weeklyWrapped(applications, interviewsMap, a), [applications, interviewsMap, a]);
   const [showWrapped, setShowWrapped] = useState(false);
+  const stageName = useCallback((stage: string) => stageLabel(stage, store.preferences), [store.preferences]);
   const [snapshotBusy, setSnapshotBusy] = useState(false);
   const snapshotRef = useRef<HTMLDivElement>(null);
 
@@ -375,7 +377,11 @@ export default function Insights() {
         <div className="card p-5">
           <h2 className="text-sm font-semibold text-light-900 dark:text-white mb-3">Stage distribution</h2>
           <Donut
-            segments={Object.entries(a.byStage).map(([label, value], i) => ({ label, value, color: SERIES[i % SERIES.length] }))}
+            segments={Object.entries(a.byStage).map(([stage, value], i) => ({
+              label: stageName(stage),
+              value,
+              color: SERIES[i % SERIES.length],
+            }))}
             centerLabel="in pipeline"
             centerValue={a.active}
             size={130}
@@ -579,7 +585,7 @@ export default function Insights() {
           <p className="text-[11px] text-light-500 dark:text-dark-400 mb-3">
             Every recorded stage transition, including the backward ones the funnel cannot show.
           </p>
-          <Sankey flow={flow} />
+          <Sankey flow={flow} labelOf={stageName} />
         </div>
 
         <div className="card p-5">

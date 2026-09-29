@@ -36,9 +36,13 @@
   </head>
   <body>
     <script>
-      // Applied before first paint so the theme never flashes.
+      // Applied before first paint so the theme never flashes. With no saved choice
+      // it follows the operating system, which is what the color-scheme meta above
+      // already promises.
       try {
-        if (localStorage.getItem('theme') === 'dark') document.documentElement.classList.add('dark');
+        var saved = localStorage.getItem('theme');
+        var dark = saved ? saved === 'dark' : window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches;
+        if (dark) document.documentElement.classList.add('dark');
       } catch (e) {}
     </script>
     <div id="root"></div>

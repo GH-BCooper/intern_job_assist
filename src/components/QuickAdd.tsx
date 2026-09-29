@@ -4,7 +4,7 @@ import { ClipboardPaste, Loader2, Sparkles, X } from 'lucide-react';
 import { useAI } from '../context/AIContext';
 import { useData } from '../context/DataContext';
 import { findDuplicates } from '../lib/duplicates';
-import { emitDeferrable, toast } from '../lib/uiBus';
+import { emitDeferrable, emitUi, toast } from '../lib/uiBus';
 
 /**
  * "Paste a job posting, get a filled form."
@@ -96,10 +96,44 @@ export default function QuickAdd({ initialText = '', onClose }: { initialText?: 
         </div>
 
         {!configured ? (
-          <p className="panel p-4 text-sm text-light-700 dark:text-dark-200">
-            This needs a free AI key. Add one in Settings → Assistant, then come back — everything else in the app works
-            without it.
-          </p>
+          <div className="panel p-4">
+            <p className="text-sm text-light-700 dark:text-dark-200">
+              Reading a posting needs a free AI key. Add one in Settings → Assistant — or skip the AI and add it by hand,
+              keeping the text you pasted as the description.
+            </p>
+            <textarea
+              value={text}
+              onChange={e => setText(e.target.value)}
+              rows={5}
+              autoFocus
+              aria-label="Job posting text"
+              placeholder="Paste the posting here to keep it with the application…"
+              className="input-field font-mono !text-xs leading-relaxed mt-3"
+            />
+            <div className="flex flex-wrap gap-2 mt-3">
+              <button
+                onClick={() => {
+                  onClose();
+                  emitDeferrable({
+                    type: 'new-application',
+                    prefill: text.trim() ? { company_description: text.trim().slice(0, 4000) } : {},
+                  });
+                }}
+                className="btn-primary btn-sm"
+              >
+                Add it by hand
+              </button>
+              <button
+                onClick={() => {
+                  onClose();
+                  emitUi({ type: 'navigate', to: '/settings' });
+                }}
+                className="btn-secondary btn-sm"
+              >
+                Open Settings
+              </button>
+            </div>
+          </div>
         ) : (
           <>
             <textarea

@@ -173,6 +173,13 @@ export function AIProvider({ children }: { children: ReactNode }) {
       const threadId = ensureThread();
       const imageCount = opts.images?.length || 0;
 
+      // The history is built from the thread *before* the new message is stored,
+      // then the message is added once, with its images. Reading the thread after
+      // storing it put every prompt into the model's context twice.
+      const priorThread = read().aiThreads.find(t => t.id === threadId) || null;
+      const history = toChatHistory(priorThread, opts.mock);
+      history.push({ role: 'user', content: trimmed, images: opts.images });
+
       appendMessage(threadId, {
         id: uid(),
         role: 'user',
@@ -180,16 +187,13 @@ export function AIProvider({ children }: { children: ReactNode }) {
         created_at: new Date().toISOString(),
       });
 
-      const thread = read().aiThreads.find(t => t.id === threadId) || null;
-      const history = toChatHistory(thread, opts.mock);
-      history.push({ role: 'user', content: trimmed, images: opts.images });
-
       setBusy(true);
       setStatus('Thinking…');
       setStreaming('');
 
-      // Warn *before* the 429 rather than surfacing it afterwards.
-      const before = recordAiCall(prefs.aiProvider);
+      // Warn *before* the 429 rather than surfacing it afterwards. A call that
+      // cannot leave the browser (no key yet) is not a request and is not counted.
+      const before = configured ? recordAiCall(prefs.aiProvider) : 0;
       const ceiling = PROVIDERS[prefs.aiProvider].dailyLimit;
       if (ceiling && before === Math.floor(ceiling * 0.9)) {
         toast(`You are at 90% of ${provider.label}'s known free daily limit.`, 'info');
@@ -233,19 +237,22 @@ export function AIProvider({ children }: { children: ReactNode }) {
         setStreaming('');
       }
     },
-    [busy, ensureThread, toChatHistory, cfg, bridge, prefs.aiProvider, provider.label],
+    [busy, configured, ensureThread, toChatHistory, cfg, bridge, prefs.aiProvider, provider.label],
   );
 
   /** One-shot generation with no tools and no thread — used by inline "draft this" buttons. */
   const askInline = useCallback(
     async (prompt: string): Promise<string> => {
+      // Inline drafts, briefings and palette answers spend the same free quota as
+      // a chat message, so they show up in the meter too.
+      if (configured) recordAiCall(prefs.aiProvider);
       const res = await chat(cfg, [
         { role: 'system', content: buildSystem() },
         { role: 'user', content: prompt },
       ]);
       return res.text;
     },
-    [cfg, buildSystem],
+    [cfg, buildSystem, configured, prefs.aiProvider],
   );
 
   /** Runs the same prompt on a different configured provider, side by side. */
@@ -309,6 +316,7 @@ export function AIProvider({ children }: { children: ReactNode }) {
     const ratio = limit ? Math.min(1, used / limit) : 0;
     return { provider: prefs.aiProvider, label: provider.label, used, limit, ratio, warn: ratio >= 0.8 };
     // store.aiUsage is in the dependency list so the meter re-reads after each call.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefs.aiProvider, provider.label, provider.dailyLimit, store.aiUsage]);
 
   const availableProviders = useMemo<AiProviderId[]>(

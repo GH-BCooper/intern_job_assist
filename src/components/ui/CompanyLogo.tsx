@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { avatarGradient, initials } from '../../lib/format';
 import { logoSources } from '../../lib/logo';
-import { usePreferences } from '../../hooks/useStore';
+import { useStoreSelector } from '../../hooks/useStore';
 
 /**
  * A real company logo where one can be found, the existing gradient-initials
@@ -19,8 +19,10 @@ export default function CompanyLogo({
   size?: number;
   className?: string;
 }) {
-  const prefs = usePreferences();
-  const sources = useMemo(() => (prefs.companyLogos ? logoSources(name) : []), [name, prefs.companyLogos]);
+  // Just the one flag: subscribing to all preferences re-rendered every logo on
+  // every store write.
+  const showLogos = useStoreSelector(s => s.preferences.companyLogos);
+  const sources = useMemo(() => (showLogos ? logoSources(name) : []), [name, showLogos]);
   const [index, setIndex] = useState(0);
 
   const src = sources[index]?.url;

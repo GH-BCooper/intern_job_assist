@@ -25,8 +25,15 @@ export default function NotificationCenter() {
     const onClick = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
     document.addEventListener('mousedown', onClick);
-    return () => document.removeEventListener('mousedown', onClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onClick);
+      document.removeEventListener('keydown', onKey);
+    };
   }, [open]);
 
   const enableBrowser = async () => {
@@ -45,6 +52,8 @@ export default function NotificationCenter() {
         className="btn-ghost btn-icon relative"
         title="Notifications"
         aria-label={`Notifications${unread ? `, ${unread} urgent` : ''}`}
+        aria-haspopup="true"
+        aria-expanded={open}
       >
         <Bell size={18} />
         {alerts.length > 0 && (
@@ -115,6 +124,7 @@ export default function NotificationCenter() {
                       }}
                       className="btn-ghost btn-icon !p-1.5 text-emerald-600 dark:text-emerald-400"
                       title="Mark done"
+                      aria-label={`Mark done: ${a.title}`}
                     >
                       <Check size={14} />
                     </button>

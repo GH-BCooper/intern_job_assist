@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
-import { CalendarClock, FileText, Send } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Bookmark, CalendarClock, CalendarDays, Send } from 'lucide-react';
 import type { Application, InterviewDate } from '../../lib/supabase';
-import { stageOf } from '../../lib/insights';
+import { stageLabel, stageOf } from '../../lib/insights';
 import { useStore } from '../../hooks/useStore';
 import { fmtDate, ts } from '../../lib/format';
 import { CompanyAvatar, StageDot } from '../ApplicationCard';
@@ -15,28 +15,40 @@ type Props = {
 type Entry = {
   id: string;
   at: number;
-  kind: 'applied' | 'interview';
+  kind: 'applied' | 'saved' | 'interview';
   app: Application;
   label: string;
 };
 
+/** Entries mounted at once; the rest load on request. */
+const PAGE = 60;
+
 export default function TimelineView({ applications, interviewsMap, onOpen }: Props) {
   const store = useStore();
+  const [shown, setShown] = useState(PAGE);
 
-  const groups = useMemo(() => {
-    const entries: Entry[] = [];
+  const entries = useMemo(() => {
+    const list: Entry[] = [];
     applications.forEach(app => {
-      const applied = ts(app.date_applied || app.created_at);
-      if (applied) entries.push({ id: `a-${app.id}`, at: applied, kind: 'applied', app, label: 'Applied' });
+      // No applied date means it is still on the wishlist; calling the day it was
+      // saved "Applied" put a false date on the timeline.
+      const applied = ts(app.date_applied);
+      if (applied) list.push({ id: `a-${app.id}`, at: applied, kind: 'applied', app, label: 'Applied' });
+      else {
+        const saved = ts(app.created_at);
+        if (saved) list.push({ id: `s-${app.id}`, at: saved, kind: 'saved', app, label: 'Saved to wishlist' });
+      }
       (interviewsMap[app.id] || []).forEach(iv => {
         const at = ts(iv.interview_date);
-        if (at) entries.push({ id: `i-${iv.id}`, at, kind: 'interview', app, label: iv.label || 'Interview' });
+        if (at) list.push({ id: `i-${iv.id}`, at, kind: 'interview', app, label: iv.label || 'Interview' });
       });
     });
-    entries.sort((a, b) => b.at - a.at);
+    return list.sort((a, b) => b.at - a.at);
+  }, [applications, interviewsMap]);
 
+  const groups = useMemo(() => {
     const map = new Map<string, Entry[]>();
-    entries.forEach(e => {
+    entries.slice(0, shown).forEach(e => {
       const d = new Date(e.at);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       if (!map.has(key)) map.set(key, []);
@@ -50,7 +62,7 @@ export default function TimelineView({ applications, interviewsMap, onOpen }: Pr
         items,
       };
     });
-  }, [applications, interviewsMap]);
+  }, [entries, shown]);
 
   if (!groups.length) {
     return <p className="text-sm text-light-600 dark:text-dark-300 py-12 text-center">Nothing dated yet.</p>;
@@ -69,11 +81,13 @@ export default function TimelineView({ applications, interviewsMap, onOpen }: Pr
               <li key={e.id} className="relative">
                 <span
                   className={`absolute -left-[22px] top-3.5 w-[18px] h-[18px] rounded-full border-2 border-light-100 dark:border-dark-950 flex items-center justify-center ${
-                    e.kind === 'interview' ? 'bg-primary-500' : 'bg-sky-400'
+                    e.kind === 'interview' ? 'bg-primary-500' : e.kind === 'saved' ? 'bg-light-400 dark:bg-dark-600' : 'bg-sky-400'
                   }`}
                 >
                   {e.kind === 'interview' ? (
                     <CalendarClock size={9} className="text-white" />
+                  ) : e.kind === 'saved' ? (
+                    <Bookmark size={8} className="text-white" />
                   ) : (
                     <Send size={8} className="text-white" />
                   )}
@@ -88,7 +102,10 @@ export default function TimelineView({ applications, interviewsMap, onOpen }: Pr
                       <span className="text-sm font-semibold text-light-900 dark:text-white truncate">
                         {e.app.company_name}
                       </span>
-                      <StageDot stage={stageOf(e.app, store.stageOverrides)} />
+                      <StageDot
+                        stage={stageOf(e.app, store.stageOverrides)}
+                        label={stageLabel(stageOf(e.app, store.stageOverrides), store.preferences)}
+                      />
                     </span>
                     <span className="block text-xs text-light-600 dark:text-dark-300 truncate mt-0.5">
                       {e.label}
@@ -96,7 +113,7 @@ export default function TimelineView({ applications, interviewsMap, onOpen }: Pr
                     </span>
                   </span>
                   <span className="text-[11px] text-light-500 dark:text-dark-400 whitespace-nowrap flex items-center gap-1">
-                    <FileText size={10} /> {fmtDate(new Date(e.at).toISOString(), { month: 'short', day: 'numeric' })}
+                    <CalendarDays size={10} /> {fmtDate(new Date(e.at).toISOString(), { month: 'short', day: 'numeric' })}
                   </span>
                 </button>
               </li>
@@ -104,6 +121,11 @@ export default function TimelineView({ applications, interviewsMap, onOpen }: Pr
           </ol>
         </section>
       ))}
+      {entries.length > shown && (
+        <button onClick={() => setShown(n => n + PAGE)} className="btn-secondary w-full">
+          Show {Math.min(PAGE, entries.length - shown)} older events · {entries.length - shown} hidden
+        </button>
+      )}
     </div>
   );
 }

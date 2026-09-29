@@ -528,8 +528,38 @@ function runAction(action: AutomationAction, rule: AutomationRule, app: Applicat
   }
 }
 
-/** Evaluate every enabled rule and execute newly-matched actions. Safe to call often. */
+let evaluating = false;
+let rerunRequested = false;
+
+/**
+ * Evaluate every enabled rule and execute newly-matched actions. Safe to call often.
+ *
+ * Passes never overlap. A pass awaits network writes before it records what it has
+ * done, and it is triggered by a timer, by every data change and by tab focus — so
+ * a second pass starting mid-way used to match the same application again and fire
+ * its actions twice (and clear the shared calendar bridge under the first pass).
+ * A call made during a pass just asks for one more pass when it finishes.
+ */
 export async function evaluateAutomations(bridge: AutomationBridge): Promise<number> {
+  if (evaluating) {
+    rerunRequested = true;
+    return 0;
+  }
+  evaluating = true;
+  try {
+    let fired = await evaluateOnce(bridge);
+    while (rerunRequested) {
+      rerunRequested = false;
+      fired += await evaluateOnce(bridge);
+    }
+    return fired;
+  } finally {
+    evaluating = false;
+    rerunRequested = false;
+  }
+}
+
+async function evaluateOnce(bridge: AutomationBridge): Promise<number> {
   const store = read();
   if (!store.preferences.automationsEnabled) return 0;
   const nowMs = Date.now();

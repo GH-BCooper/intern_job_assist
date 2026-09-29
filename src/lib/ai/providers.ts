@@ -54,7 +54,8 @@ export const PROVIDERS: Record<AiProviderId, ProviderInfo> = {
     models: [
       { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', note: 'Best balance — recommended' },
       { id: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash Lite', note: 'Highest free quota' },
-      { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash', note: 'Fallback' },
+      { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', note: 'Newer, if 2.0 is unavailable' },
+      { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite', note: 'Newer and lighter' },
     ],
     defaultModel: 'gemini-2.0-flash',
     keyUrl: 'https://aistudio.google.com/apikey',
@@ -116,6 +117,26 @@ export type ProviderConfig = {
   baseUrl?: string;
 };
 
+/** How long to wait for a provider before giving up, so the panel never sits on "Thinking…" forever. */
+const REQUEST_TIMEOUT_MS = 60_000;
+const STREAM_TIMEOUT_MS = 120_000;
+
+/** `fetch` that fails with a readable error instead of hanging. */
+async function fetchWithTimeout(url: string, init: RequestInit, ms = REQUEST_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new AiError('The model took too long to answer. Try again, or pick a faster model in Settings.', true);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export class AiError extends Error {
   constructor(message: string, readonly retryable = false) {
     super(message);
@@ -131,7 +152,8 @@ type GeminiPart =
   | { functionCall: { name: string; args: Record<string, unknown> } }
   | { functionResponse: { name: string; response: Record<string, unknown> } };
 
-function toGemini(messages: ChatMessage[]) {
+/** Exported for tests: the shape Gemini is sent, which has strict rules about tool-result turns. */
+export function toGemini(messages: ChatMessage[]) {
   const systemParts: string[] = [];
   const contents: { role: 'user' | 'model'; parts: GeminiPart[] }[] = [];
 
@@ -141,10 +163,16 @@ function toGemini(messages: ChatMessage[]) {
       return;
     }
     if (m.role === 'tool') {
-      contents.push({
-        role: 'user',
-        parts: [{ functionResponse: { name: m.name, response: { result: m.content } } }],
-      });
+      const part: GeminiPart = { functionResponse: { name: m.name, response: { result: m.content } } };
+      // Gemini wants every result for a round of tool calls in ONE turn, matching
+      // the number of calls the model made. One turn per result is rejected with a
+      // 400 as soon as the model calls two tools at once.
+      const previous = contents[contents.length - 1];
+      if (previous && previous.role === 'user' && previous.parts.every(p => 'functionResponse' in p)) {
+        previous.parts.push(part);
+      } else {
+        contents.push({ role: 'user', parts: [part] });
+      }
       return;
     }
     if (m.role === 'assistant') {
@@ -185,7 +213,7 @@ async function callGemini(cfg: ProviderConfig, messages: ChatMessage[], tools: T
     ];
   }
 
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.model)}:generateContent`,
     {
       method: 'POST',
@@ -296,7 +324,7 @@ async function callOpenAiCompatible(
     body.tool_choice = 'auto';
   }
 
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
@@ -345,7 +373,9 @@ async function describeHttpError(res: Response): Promise<string> {
   }
   detail = detail.slice(0, 300);
   if (res.status === 401 || res.status === 403) return `Authentication failed — check your API key. ${detail}`;
-  if (res.status === 404) return `Model not found for this provider. ${detail}`;
+  if (res.status === 404) {
+    return `Model not found for this provider — it may have been retired. Pick another in Settings → Assistant. ${detail}`;
+  }
   if (res.status === 429) return `Rate limit reached on the free tier. Wait a moment or switch model. ${detail}`;
   return `Provider error ${res.status}: ${detail}`;
 }
@@ -399,11 +429,15 @@ export async function streamChat(
           };
         })();
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...headers },
-    body: JSON.stringify(body),
-  });
+  const res = await fetchWithTimeout(
+    url,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+    },
+    STREAM_TIMEOUT_MS,
+  );
 
   if (!res.ok) throw new AiError(await describeHttpError(res), res.status === 429 || res.status >= 500);
   if (!res.body) throw new AiError('This provider returned no stream.');

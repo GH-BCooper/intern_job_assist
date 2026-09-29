@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Archive,
@@ -127,6 +127,8 @@ export default function Dashboard() {
   const [sortBy, setSortBy] = useState('recent');
   const [showArchived, setShowArchived] = useState(false);
   const [starredOnly, setStarredOnly] = useState(false);
+  /** Cards mounted in the grid view before "show more"; a few hundred at once is slow. */
+  const [gridLimit, setGridLimit] = useState(48);
 
   const [showForm, setShowForm] = useState(false);
   const [editApp, setEditApp] = useState<Application | null>(null);
@@ -141,6 +143,10 @@ export default function Dashboard() {
   const [showWrapped, setShowWrapped] = useState(false);
   const [quickAddText, setQuickAddText] = useState<string | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
+
+  // Typing in the search box updates the field at once and the list a beat later,
+  // so a large board cannot make the keystrokes themselves feel slow.
+  const deferredSearch = useDeferredValue(filters.search);
 
   const analytics = useMemo(
     () => computeAnalytics(applications, interviewsMap, store, store.preferences.followUpDays),
@@ -266,6 +272,7 @@ export default function Dashboard() {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && /input|textarea|select/i.test(target.tagName)) return;
+      if (target?.isContentEditable || document.querySelector('[aria-modal="true"]')) return;
       if (e.key === 'n' && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
         setEditApp(null);
@@ -282,7 +289,7 @@ export default function Dashboard() {
   );
 
   const filtered = useMemo(() => {
-    const q = filters.search.trim().toLowerCase();
+    const q = deferredSearch.trim().toLowerCase();
     const tagId = filters.tag ? store.tags.find(t => t.name.toLowerCase() === filters.tag.toLowerCase())?.id : undefined;
 
     const rows = applications.filter(app => {
@@ -306,7 +313,10 @@ export default function Dashboard() {
       return true;
     });
 
-    const firstInterview = (a: Application) => ts(interviewsMap[a.id]?.[0]?.interview_date) || Infinity;
+    // The soonest round that has not happened yet; applications with none sort last.
+    const cutoff = Date.now() - 86_400_000;
+    const firstInterview = (a: Application) =>
+      ts(interviewsMap[a.id]?.find(iv => ts(iv.interview_date) >= cutoff)?.interview_date) || Infinity;
 
     return rows.sort((a, b) => {
       switch (sortBy) {
@@ -317,14 +327,15 @@ export default function Dashboard() {
         case 'interview_closest':
           return firstInterview(a) - firstInterview(b);
         case 'quiet':
-          return ts(a.date_applied || a.created_at) - ts(b.date_applied || b.created_at);
+          // Longest since anything changed first — not the same as "oldest applied".
+          return ts(a.updated_at || a.date_applied || a.created_at) - ts(b.updated_at || b.date_applied || b.created_at);
         case 'priority':
           return (store.priorities[b.id] || 0) - (store.priorities[a.id] || 0);
         default:
           return ts(b.date_applied || b.created_at) - ts(a.date_applied || a.created_at);
       }
     });
-  }, [applications, filters, sortBy, showArchived, starredOnly, store, interviewsMap]);
+  }, [applications, deferredSearch, filters.status, filters.platform, filters.stage, filters.tag, sortBy, showArchived, starredOnly, store, interviewsMap]);
 
   const activeFilterCount =
     Object.values(filters).filter(Boolean).length + (starredOnly ? 1 : 0) + (showArchived ? 1 : 0);
@@ -1021,16 +1032,18 @@ export default function Dashboard() {
       ) : view === 'timeline' ? (
         <TimelineView applications={filtered} interviewsMap={interviewsMap} onOpen={setDetailApp} />
       ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filtered.map(app => (
-            <ApplicationCard
-              key={app.id}
-              application={app}
-              interviews={interviewsMap[app.id] || []}
-              onClick={() => setDetailApp(app)}
-            />
-          ))}
-        </div>
+        <>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {filtered.slice(0, gridLimit).map(app => (
+              <ApplicationCard key={app.id} application={app} interviews={interviewsMap[app.id]} onOpen={setDetailApp} />
+            ))}
+          </div>
+          {filtered.length > gridLimit && (
+            <button onClick={() => setGridLimit(n => n + 48)} className="btn-secondary w-full mt-4">
+              Show {Math.min(48, filtered.length - gridLimit)} more · {filtered.length - gridLimit} hidden
+            </button>
+          )}
+        </>
       )}
 
       {!loading && filtered.length > 0 && (

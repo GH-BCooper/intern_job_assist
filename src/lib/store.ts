@@ -26,6 +26,11 @@ export type Reminder = {
   notified: boolean;
   /** Recurring reminders re-schedule themselves when completed. */
   repeat: 'none' | 'daily' | 'weekly' | 'monthly';
+  /**
+   * The day of the month a monthly reminder was first due. Kept so a reminder set
+   * for the 31st goes 28th → 31st, instead of settling on the 28th for good.
+   */
+  anchorDay?: number;
   /** IANA zone, for interviews with a remote or international interviewer. */
   timezone: string;
   created_at: string;
@@ -541,11 +546,49 @@ export function read(): StoreShape {
   return cache;
 }
 
-export function write(next: StoreShape) {
+/** Event fired when the browser refuses to store the workspace; the app shell turns it into a toast. */
+export const STORAGE_WARNING_EVENT = 'interntrack:storage-warning';
+
+function warnStorage(message: string) {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(STORAGE_WARNING_EVENT, { detail: message }));
+}
+
+function persist(value: StoreShape): boolean {
   try {
-    localStorage.setItem(storeKey(), JSON.stringify(next));
+    localStorage.setItem(storeKey(), JSON.stringify(value));
+    return true;
   } catch {
-    /* quota exceeded — session keeps working from memory */
+    return false;
+  }
+}
+
+/**
+ * The same workspace with its bulkiest, re-creatable parts cut down: old assistant
+ * chats, the automation log and the activity feed. Nothing the user typed by hand
+ * (applications' notes, tasks, contacts, cards) is touched.
+ */
+function slimmed(state: StoreShape): StoreShape {
+  return {
+    ...state,
+    aiThreads: state.aiThreads.slice(0, 5).map(t => ({ ...t, messages: t.messages.slice(-20) })),
+    automationLog: state.automationLog.slice(0, 50),
+    activity: state.activity.slice(0, 100),
+    stageHistory: state.stageHistory.slice(0, 300),
+  };
+}
+
+export function write(next: StoreShape) {
+  if (!persist(next)) {
+    // Browser storage is full. Silently carrying on from memory meant every later
+    // change vanished on reload with no hint; shed the disposable data and retry,
+    // and say so if even that fails.
+    const lean = slimmed(next);
+    if (persist(lean)) {
+      next = lean;
+      warnStorage('Browser storage was nearly full, so older assistant chats and history were trimmed to keep your data safe.');
+    } else {
+      warnStorage('Browser storage is full — your latest changes will not survive a reload. Export a backup from Settings → Your data.');
+    }
   }
   cache = next;
   cacheKey = storeKey();
@@ -659,7 +702,10 @@ export function addReminder(input: Partial<Reminder> & { title: string; due_at: 
 export function updateReminder(id: ID, patch: Partial<Reminder>) {
   mutate(d => {
     const r = d.reminders.find(x => x.id === id);
-    if (r) Object.assign(r, patch);
+    if (!r) return;
+    Object.assign(r, patch);
+    // Picking a new date restarts the monthly anchor from that date.
+    if (patch.due_at) delete r.anchorDay;
   });
 }
 
@@ -682,10 +728,19 @@ export function completeReminder(id: ID) {
     }
 
     const next = new Date(reminder.due_at);
+    const anchorDay = reminder.anchorDay ?? next.getDate();
+    if (reminder.repeat === 'monthly') reminder.anchorDay = anchorDay;
     const step = () => {
       if (reminder.repeat === 'daily') next.setDate(next.getDate() + 1);
       else if (reminder.repeat === 'weekly') next.setDate(next.getDate() + 7);
-      else next.setMonth(next.getMonth() + 1);
+      else {
+        // Jan 31 + one month must be the last day of February, not March 3rd — and
+        // the following month goes back to the 31st, so the date does not drift.
+        next.setDate(1);
+        next.setMonth(next.getMonth() + 1);
+        const daysInMonth = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+        next.setDate(Math.min(anchorDay, daysInMonth));
+      }
     };
     step();
     // Skip any occurrences already in the past (a reminder left for a fortnight).
@@ -971,7 +1026,18 @@ export function appendMessage(threadId: ID, message: AiMessage) {
   mutate(d => {
     const t = d.aiThreads.find(x => x.id === threadId);
     if (!t) return;
-    t.messages.push(message);
+    // A tool trace can carry a whole result set; the chat only needs a taste of it.
+    const trimmed: AiMessage = message.toolCalls
+      ? {
+          ...message,
+          toolCalls: message.toolCalls.map(c => ({
+            ...c,
+            result: c.result && c.result.length > 1500 ? `${c.result.slice(0, 1500)}…` : c.result,
+          })),
+        }
+      : message;
+    t.messages.push(trimmed);
+    if (t.messages.length > 200) t.messages = t.messages.slice(-200);
     t.updated_at = now();
     if (t.title === NEW_THREAD_TITLE && message.role === 'user') {
       t.title = message.content.slice(0, 48);
@@ -995,8 +1061,26 @@ export function deleteThread(id: ID) {
 
 /* ------------------------------ portability ------------------------------ */
 
-export function exportStore(): string {
-  return JSON.stringify({ version: 2, exported_at: now(), data: read() }, null, 2);
+/**
+ * Preferences that are credentials rather than settings: the AI provider keys, a
+ * Discord/Slack webhook URL (anyone holding it can post as you) and the bot and
+ * share tokens. A backup gets emailed, synced to cloud drives and posted in
+ * issues, so it must not carry them.
+ */
+const SECRET_PREFERENCES = ['aiKeys', 'telegramToken', 'webhookUrl', 'shareToken'] as const;
+
+function withoutSecrets(preferences: Preferences): Preferences {
+  const clean = { ...preferences } as Preferences;
+  SECRET_PREFERENCES.forEach(key => {
+    (clean as Record<string, unknown>)[key] = DEFAULT_PREFERENCES[key];
+  });
+  return clean;
+}
+
+export function exportStore(opts: { includeSecrets?: boolean } = {}): string {
+  const data = read();
+  const safe = opts.includeSecrets ? data : { ...data, preferences: withoutSecrets(data.preferences) };
+  return JSON.stringify({ version: 2, exported_at: now(), data: safe }, null, 2);
 }
 
 const MERGEABLE = [
@@ -1038,7 +1122,15 @@ export function importStore(json: string, mode: 'merge' | 'replace' = 'merge') {
       const seen = new Set(target.map(x => x.id));
       list.filter(x => x && !seen.has(x.id)).forEach(x => target.push(x));
     });
-    d.preferences = { ...d.preferences, ...(incoming.preferences || {}) };
+    // An export carries no credentials, so a merge must leave the ones already here
+    // alone rather than overwrite them with the file's empty defaults.
+    const incomingPrefs = { ...(incoming.preferences || {}) } as Record<string, unknown>;
+    SECRET_PREFERENCES.forEach(key => {
+      const current = (d.preferences as Record<string, unknown>)[key];
+      const hasCurrent = key === 'aiKeys' ? Object.keys((current as object) || {}).length > 0 : !!current;
+      if (hasCurrent) delete incomingPrefs[key];
+    });
+    d.preferences = { ...d.preferences, ...incomingPrefs };
     d.stageOverrides = { ...d.stageOverrides, ...(incoming.stageOverrides || {}) };
     d.priorities = { ...d.priorities, ...(incoming.priorities || {}) };
     d.seasonOf = { ...d.seasonOf, ...(incoming.seasonOf || {}) };

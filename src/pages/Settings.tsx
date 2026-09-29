@@ -76,6 +76,7 @@ import {
   buildSharePayload,
   createShareLink,
   listShareLinks,
+  deleteAllShareLinks,
   revokeShareLink,
   shareUrl,
   ShareUnavailableError,
@@ -222,12 +223,13 @@ export default function Settings() {
   };
 
   /** Imports a competitor's CSV export through a column-mapping preset. */
-  const runPresetImport = async (file: File) => {
+  const runPresetImport = async (file: File, mode: 'chosen' | 'auto' = 'chosen') => {
     setImporting(true);
     try {
       const text = await file.text();
       const rows = parseCsv(text);
-      const plan = buildImportPlan(rows, applications, importPreset.id === 'generic' ? undefined : importPreset);
+      const usePreset = mode === 'auto' || importPreset.id === 'generic' ? undefined : importPreset;
+      const plan = buildImportPlan(rows, applications, usePreset);
       if (!plan.rows.length) {
         toast(
           plan.duplicates.length
@@ -244,15 +246,21 @@ export default function Settings() {
       );
       if (!confirmed) return;
 
+      // A few at a time: strictly one-by-one made a 200-row LinkedIn export take
+      // minutes, and everything at once would trip the free tier's rate limits.
       let created = 0;
-      for (const row of plan.rows) {
-        try {
-          await createApplication(row);
-          created += 1;
-        } catch {
-          /* keep going: one bad row should not abort the import */
+      const queue = [...plan.rows];
+      const worker = async () => {
+        for (let row = queue.shift(); row; row = queue.shift()) {
+          try {
+            await createApplication(row);
+            created += 1;
+          } catch {
+            /* keep going: one bad row should not abort the import */
+          }
         }
-      }
+      };
+      await Promise.all(Array.from({ length: Math.min(5, queue.length) }, worker));
       await refresh();
       toast(`Imported ${created} of ${plan.rows.length}.`, created ? 'success' : 'error');
     } catch (e) {
@@ -308,15 +316,35 @@ export default function Settings() {
 
   const wipeEverything = async () => {
     if (!user) return;
-    wipeLocalStore();
     try {
+      // Remote first, and only clear the browser once that has really worked: the
+      // old order wiped the local workspace, ignored a failed delete, and still
+      // announced success.
+      await deleteAllShareLinks(user.id);
+
+      const filePaths = [
+        ...applications.flatMap(a => [a.resume_path, a.cover_letter_path]),
+        ...store.resumes.map(r => r.file?.path),
+      ].filter((p): p is string => !!p);
+      if (filePaths.length) {
+        const { error: fileError } = await supabase.storage.from('applications').remove(filePaths);
+        if (fileError) throw new Error(`Could not delete your uploaded files: ${fileError.message}`);
+      }
+
       // Applications are the user's own rows; RLS scopes this to them.
-      await supabase.from('applications').delete().eq('user_id', user.id);
-    } catch {
-      /* the local wipe has already happened; report what we can */
+      const { error } = await supabase.from('applications').delete().eq('user_id', user.id);
+      if (error) throw new Error(error.message);
+    } catch (e) {
+      setWipeConfirm(0);
+      toast(
+        `${e instanceof Error ? e.message : 'Could not delete your data.'} Nothing was removed from this browser.`,
+        'error',
+      );
+      return;
     }
+    wipeLocalStore();
     forgetPassphrase();
-    toast('Local workspace cleared and your applications deleted. Signing you out.', 'success');
+    toast('Your applications, files, share links and local workspace are deleted. Signing you out.', 'success');
     setTimeout(() => void signOut(), 1500);
   };
 
@@ -355,23 +383,9 @@ export default function Settings() {
     }
   };
 
-  const importCsv = async (file: File) => {
-    try {
-      const rows = parseCsv(await file.text());
-      if (!rows.length) {
-        toast('No rows found in that CSV.', 'error');
-        return;
-      }
-      toast(`Parsed ${rows.length} rows. Ask Scout to import them — it will map the columns for you.`, 'info');
-      window.sessionStorage.setItem('interntrack.pendingCsv', JSON.stringify(rows.slice(0, 50)));
-    } catch {
-      toast('Could not read that CSV.', 'error');
-    }
-  };
-
   return (
     <PageShell title="Settings" subtitle={user?.email || 'Your preferences, stored on this device.'}>
-      <div className="grid lg:grid-cols-2 gap-4">
+      <div className="grid lg:grid-cols-2 gap-4 items-start">
         <AccountSecurity />
 
         <Section
@@ -1138,8 +1152,8 @@ export default function Settings() {
           <div className="divider my-3" />
           <label className="label text-red-600 dark:text-red-400">Delete everything</label>
           <p className="text-[11px] text-light-600 dark:text-dark-300 leading-relaxed mb-2">
-            Clears this browser's workspace and deletes your applications from Supabase. Export first — this cannot be
-            undone.
+            Deletes your applications, uploaded resumes and cover letters, and every share link from Supabase, then
+            clears this browser's workspace and signs you out. Export first — this cannot be undone.
           </p>
           {wipeConfirm === 0 ? (
             <button onClick={() => setWipeConfirm(1)} className="btn-danger btn-sm">
@@ -1266,7 +1280,9 @@ export default function Settings() {
             className="hidden"
             onChange={e => {
               const f = e.target.files?.[0];
-              if (f) void importCsv(f);
+              // Detects the columns itself and shows the counts before writing;
+              // this button used to parse the file and then do nothing with it.
+              if (f) void runPresetImport(f, 'auto');
               e.target.value = '';
             }}
           />

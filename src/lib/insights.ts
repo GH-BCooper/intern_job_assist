@@ -1,6 +1,6 @@
 import type { Application, InterviewDate } from './supabase';
 import type { StageChange, StoreShape } from './store';
-import { DAY_MS, dayKey, daysSince, parseDate, startOfMonth, startOfWeek, toDateInput, ts } from './format';
+import { DAY_MS, addDays, dayKey, daysSince, parseDate, startOfMonth, startOfWeek, toDateInput, ts } from './format';
 
 export const STAGES = ['Wishlist', 'Applied', 'In Review', 'Interviewing', 'Offer', 'Closed'] as const;
 export type Stage = (typeof STAGES)[number];
@@ -143,8 +143,8 @@ export function computeAnalytics(
   const weekStart = startOfWeek();
   const byWeek: Analytics['byWeek'] = [];
   for (let i = 11; i >= 0; i -= 1) {
-    const from = new Date(weekStart.getTime() - i * 7 * DAY_MS);
-    const to = new Date(from.getTime() + 7 * DAY_MS);
+    const from = addDays(weekStart, -i * 7);
+    const to = addDays(from, 7);
     const count = applications.filter(a => {
       const t = ts(a.date_applied || a.created_at);
       return t >= from.getTime() && t < to.getTime();
@@ -186,7 +186,7 @@ export function computeAnalytics(
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   for (let i = 181; i >= 0; i -= 1) {
-    const d = new Date(today.getTime() - i * DAY_MS);
+    const d = addDays(today, -i);
     const key = dayKey(d);
     heatmap.push({ date: key, count: dayMap.get(key) || 0 });
   }
@@ -444,7 +444,7 @@ function compare(label: string, current: number, previous: number): PeriodCompar
 /** Week / month / quarter comparisons, the same shape the headline stats already use. */
 export function periodComparisons(applications: Application[], at = new Date()): Record<'week' | 'month' | 'quarter', PeriodComparison> {
   const weekStart = startOfWeek(at).getTime();
-  const lastWeekStart = weekStart - 7 * DAY_MS;
+  const lastWeekStart = addDays(startOfWeek(at), -7).getTime();
 
   const monthStart = startOfMonth(at).getTime();
   const lastMonthStart = startOfMonth(new Date(at.getFullYear(), at.getMonth() - 1, 1)).getTime();
@@ -456,7 +456,7 @@ export function periodComparisons(applications: Application[], at = new Date()):
   return {
     week: compare(
       'This week',
-      countInRange(applications, weekStart, weekStart + 7 * DAY_MS),
+      countInRange(applications, weekStart, addDays(startOfWeek(at), 7).getTime()),
       countInRange(applications, lastWeekStart, weekStart),
     ),
     month: compare(
@@ -757,8 +757,8 @@ export function weeklyWrapped(
   at = new Date(),
 ): Wrapped {
   const start = startOfWeek(at);
-  const end = new Date(start.getTime() + 7 * DAY_MS);
-  const prevStart = new Date(start.getTime() - 7 * DAY_MS);
+  const end = addDays(start, 7);
+  const prevStart = addDays(start, -7);
 
   const inWeek = applications.filter(app => {
     const t = ts(app.date_applied || app.created_at);

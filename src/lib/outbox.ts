@@ -18,6 +18,8 @@ export type OutboxItem = {
   created_at: string;
   attempts: number;
   lastError?: string;
+  /** The user who queued it. The database is shared by every account on this browser. */
+  owner?: string;
 };
 
 const DB_NAME = 'interntrack';
@@ -73,6 +75,24 @@ const listeners = new Set<(items: OutboxItem[]) => void>();
 
 let cached: OutboxItem[] = [];
 
+/**
+ * Whose writes this session may see and replay.
+ *
+ * The queue lives in one IndexedDB per browser, not per account. Without this, a
+ * write queued offline by one user was replayed under the next user's session —
+ * rejected by row-level security at best, and either way surfaced as a failure to
+ * someone who never made it.
+ */
+let owner: string | null = null;
+
+export function setOutboxOwner(userId: string | null) {
+  if (owner === userId) return;
+  owner = userId;
+  void notify();
+}
+
+const mine = (item: OutboxItem) => !item.owner || item.owner === owner;
+
 export function onOutboxChange(fn: (items: OutboxItem[]) => void) {
   listeners.add(fn);
   fn(cached);
@@ -82,7 +102,7 @@ export function onOutboxChange(fn: (items: OutboxItem[]) => void) {
 }
 
 async function notify() {
-  cached = (await list()) || [];
+  cached = ((await list()) || []).filter(mine);
   listeners.forEach(l => l(cached));
 }
 
@@ -157,6 +177,7 @@ export async function enqueue<T>(
     payload,
     created_at: new Date().toISOString(),
     attempts: 0,
+    ...(owner ? { owner } : {}),
   };
 
   if (!isOnline()) {
@@ -184,7 +205,7 @@ export async function flush(): Promise<{ sent: number; failed: number }> {
   let sent = 0;
   let failed = 0;
   try {
-    const items = await list();
+    const items = (await list()).filter(mine);
     for (const item of items) {
       const runner = runners.get(item.kind);
       if (!runner) {

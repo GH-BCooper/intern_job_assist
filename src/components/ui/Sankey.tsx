@@ -17,16 +17,30 @@ const COLORS: Record<string, string> = {
  * are drawn in a warmer tone because Interviewing → Closed is the single most
  * informative edge in the chart.
  */
-export default function Sankey({ flow, height = 260 }: { flow: StageFlow; height?: number }) {
+export default function Sankey({
+  flow,
+  height = 260,
+  labelOf = stage => stage,
+}: {
+  flow: StageFlow;
+  height?: number;
+  /** Display name for a stage, so the chart matches the user's renamed board. */
+  labelOf?: (stage: string) => string;
+}) {
   const width = 640;
   const nodeWidth = 13;
   const gap = 10;
+  /** Room either side for the first and last labels, which are centred on their nodes. */
+  const padX = 34;
 
   const layout = useMemo(() => {
+    // With no recorded moves this would be a row of plain bars under a heading
+    // about movement, so it falls through to the empty message instead.
+    if (!flow.links.length) return null;
     const columns = STAGES.filter(s => flow.totals[s] > 0 || flow.links.some(l => l.from === s || l.to === s));
     if (!columns.length) return null;
 
-    const step = columns.length > 1 ? (width - nodeWidth) / (columns.length - 1) : 0;
+    const step = columns.length > 1 ? (width - 2 * padX - nodeWidth) / (columns.length - 1) : 0;
     const maxTotal = Math.max(1, ...columns.map(s => flow.totals[s] || 0));
     const usable = height - 40;
 
@@ -35,7 +49,7 @@ export default function Sankey({ flow, height = 260 }: { flow: StageFlow; height
       const h = Math.max(14, (value / maxTotal) * (usable - gap));
       return {
         stage,
-        x: i * step,
+        x: columns.length > 1 ? padX + i * step : (width - nodeWidth) / 2,
         y: 20 + (usable - h) / 2,
         h,
         value,
@@ -73,12 +87,12 @@ export default function Sankey({ flow, height = 260 }: { flow: StageFlow; height
             `L${x2},${iy + thickness} C${mid},${iy + thickness} ${mid},${oy + thickness} ${x1},${oy + thickness} Z`,
           color: link.backward ? '#FF7E7E' : COLORS[link.from] || '#FB923C',
           opacity: link.backward ? 0.32 : 0.24,
-          label: `${link.from} → ${link.to}: ${link.count}`,
+          label: `${labelOf(link.from)} → ${labelOf(link.to)}: ${link.count}`,
         };
       });
 
     return { nodes, ribbons };
-  }, [flow, height]);
+  }, [flow, height, labelOf]);
 
   if (!layout) {
     return (
@@ -99,7 +113,7 @@ export default function Sankey({ flow, height = 260 }: { flow: StageFlow; height
         {layout.nodes.map(n => (
           <g key={n.stage}>
             <rect x={n.x} y={n.y} width={nodeWidth} height={n.h} rx={3} fill={COLORS[n.stage] || '#FB923C'}>
-              <title>{`${n.stage}: ${n.value}`}</title>
+              <title>{`${labelOf(n.stage)}: ${n.value}`}</title>
             </rect>
             <text
               x={n.x + nodeWidth / 2}
@@ -108,7 +122,7 @@ export default function Sankey({ flow, height = 260 }: { flow: StageFlow; height
               fontSize="9.5"
               className="fill-light-600 dark:fill-dark-300"
             >
-              {n.stage}
+              {labelOf(n.stage)}
             </text>
             <text
               x={n.x + nodeWidth / 2}

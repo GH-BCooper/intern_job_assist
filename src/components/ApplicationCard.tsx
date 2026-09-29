@@ -1,7 +1,8 @@
+import { memo } from 'react';
 import { Calendar, CalendarClock, Flame, MapPin, Star, UserCheck, Wallet } from 'lucide-react';
 import type { Application, InterviewDate } from '../lib/supabase';
 import { STAGE_META, stageLabel, stageOf, type Stage } from '../lib/insights';
-import { useStore } from '../hooks/useStore';
+import { sameJson, useStoreSelector } from '../hooks/useStore';
 import { toggleStar } from '../lib/store';
 import { avatarGradient, daysUntil, fmtDate, initials, truncate } from '../lib/format';
 import CompanyLogo from './ui/CompanyLogo';
@@ -61,24 +62,47 @@ export function CompanyAvatar({ name, size = 40 }: { name: string; size?: number
 type Props = {
   application: Application;
   interviews?: InterviewDate[];
-  onClick: () => void;
+  /** Called with this card's application, so a parent can pass one stable handler to every card. */
+  onOpen: (app: Application) => void;
   compact?: boolean;
 };
 
-export default function ApplicationCard({ application: app, interviews = [], onClick, compact }: Props) {
-  const store = useStore();
-  const stage = stageOf(app, store.stageOverrides);
-  const starred = store.starred.includes(app.id);
-  const tags = store.applicationTags
-    .filter(at => at.application_id === app.id)
-    .map(at => store.tags.find(t => t.id === at.tag_id))
-    .filter(Boolean)
-    .slice(0, 3);
+const NO_INTERVIEWS: InterviewDate[] = [];
+
+/**
+ * Everything a card reads from the local store, as one small plain object.
+ *
+ * With hundreds of cards on the board, subscribing each to the whole store meant
+ * a star toggle or an automation tick re-rendered all of them. This selects only
+ * what one card shows, and `sameJson` keeps the previous object while it is equal.
+ */
+function useCardView(appId: string, app: Application) {
+  return useStoreSelector(s => {
+    const tags = s.applicationTags
+      .filter(at => at.application_id === appId)
+      .map(at => s.tags.find(t => t.id === at.tag_id))
+      .filter((t): t is NonNullable<typeof t> => !!t)
+      .slice(0, 3)
+      .map(t => ({ id: t.id, name: t.name, color: t.color }));
+    const referrerId = s.referrals[appId];
+    return {
+      stage: stageOf(app, s.stageOverrides),
+      labels: s.preferences.stageLabels,
+      starred: s.starred.includes(appId),
+      priority: s.priorities[appId] || 0,
+      tags,
+      referrer: referrerId ? s.contacts.find(c => c.id === referrerId)?.name || null : null,
+    };
+  }, sameJson);
+}
+
+function ApplicationCard({ application: app, interviews = NO_INTERVIEWS, onOpen, compact }: Props) {
+  const view = useCardView(app.id, app);
+  const { stage, starred, priority, tags, referrer } = view;
+  const onClick = () => onOpen(app);
 
   const next = interviews.find(i => daysUntil(i.interview_date) !== null && (daysUntil(i.interview_date) as number) >= 0);
   const countdown = next ? (daysUntil(next.interview_date) as number) : null;
-  const priority = store.priorities[app.id] || 0;
-  const referrer = store.referrals[app.id] ? store.contacts.find(c => c.id === store.referrals[app.id]) : null;
 
   return (
     <div
@@ -121,7 +145,7 @@ export default function ApplicationCard({ application: app, interviews = [], onC
             <p className="text-xs text-light-600 dark:text-dark-300 truncate">{app.role_applied_to}</p>
           )}
           <div className="mt-1 flex items-center gap-2 flex-wrap">
-            <StageDot stage={stage} label={stageLabel(stage, store.preferences)} />
+            <StageDot stage={stage} label={stageLabel(stage, { stageLabels: view.labels })} />
             <PriorityFlames value={priority} />
           </div>
         </div>
@@ -129,7 +153,7 @@ export default function ApplicationCard({ application: app, interviews = [], onC
 
       {referrer && (
         <p className="mt-2 inline-flex items-center gap-1 text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
-          <UserCheck size={11} /> via {referrer.name}
+          <UserCheck size={11} /> via {referrer}
         </p>
       )}
 
@@ -153,11 +177,11 @@ export default function ApplicationCard({ application: app, interviews = [], onC
           )}
           {tags.map(t => (
             <span
-              key={t!.id}
+              key={t.id}
               className="badge"
-              style={{ background: `${t!.color}1f`, color: t!.color, border: `1px solid ${t!.color}40` }}
+              style={{ background: `${t.color}1f`, color: t.color, border: `1px solid ${t.color}40` }}
             >
-              {t!.name}
+              {t.name}
             </span>
           ))}
         </div>
@@ -181,3 +205,5 @@ export default function ApplicationCard({ application: app, interviews = [], onC
     </div>
   );
 }
+
+export default memo(ApplicationCard);

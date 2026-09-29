@@ -37,6 +37,20 @@ export function fmtDateTime(value?: string | null): string {
   return t.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
+/**
+ * A date `n` calendar days away, keeping the local time of day.
+ *
+ * Adding `n * 86_400_000` ms is wrong across a daylight-saving change: the day is
+ * 23 or 25 hours long, so the result lands an hour off — on the previous date
+ * after the autumn change. Week buckets, the heatmap and the calendar grid all
+ * step by whole days, so they use this.
+ */
+export function addDays(d: Date, n: number): Date {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+
 export function daysBetween(a: number, b: number): number {
   return Math.round((a - b) / DAY_MS);
 }

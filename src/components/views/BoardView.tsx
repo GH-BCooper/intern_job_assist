@@ -27,6 +27,17 @@ type Props = {
 
 type Lane = { key: string; label: string; items: Application[] };
 
+const NO_INTERVIEWS: InterviewDate[] = [];
+
+/**
+ * Cards mounted per column before a "show more" button.
+ *
+ * A pipeline of a few hundred meant thousands of DOM nodes and a visibly slow
+ * board on every keystroke; the columns scroll anyway, so most of them were
+ * never seen. Counts in the column header stay the true totals.
+ */
+const COLUMN_PAGE = 30;
+
 const PRIORITY_LABELS = ['No rating', '1 — long shot', '2 — worth a try', '3 — solid fit', '4 — strong want', '5 — dream role'];
 
 export default function BoardView({ applications, interviewsMap, onOpen, onAdd }: Props) {
@@ -37,6 +48,7 @@ export default function BoardView({ applications, interviewsMap, onOpen, onAdd }
   /** The card keyboard navigation is on, as `${stage}:${id}`. */
   const [focusKey, setFocusKey] = useState<string | null>(null);
   const [showKeys, setShowKeys] = useState(false);
+  const [limits, setLimits] = useState<Record<string, number>>({});
   const boardRef = useRef<HTMLDivElement>(null);
 
   const stages = useMemo(() => orderedStages(store.preferences), [store.preferences]);
@@ -141,6 +153,26 @@ export default function BoardView({ applications, interviewsMap, onOpen, onAdd }
   );
 
   const focused = focusKey ? flat.find(f => `${f.stage}:${f.app.id}` === focusKey) : null;
+
+  // Keyboard navigation can reach a card that is past the column's current page;
+  // open the page up rather than focusing something that is not on screen.
+  useEffect(() => {
+    if (!focused) return;
+    const col = columns.find(c => c.stage === focused.stage);
+    const at = col ? col.items.findIndex(a => a.id === focused.app.id) : -1;
+    if (at >= (limits[focused.stage] ?? COLUMN_PAGE)) {
+      setLimits(l => ({ ...l, [focused.stage]: at + COLUMN_PAGE }));
+    }
+  }, [focused, columns, limits]);
+
+  /** One stable handler for every card, so memoised cards are not re-rendered by a new closure each time. */
+  const openCard = useCallback(
+    (app: Application) => {
+      setFocusKey(`${stageOf(app, store.stageOverrides)}:${app.id}`);
+      onOpen(app);
+    },
+    [onOpen, store.stageOverrides],
+  );
 
   // A card that scrolls out of the filtered set must not keep the focus ring.
   useEffect(() => {
@@ -291,7 +323,8 @@ export default function BoardView({ applications, interviewsMap, onOpen, onAdd }
         {columns.map(({ stage, items }) => {
           const limit = wipLimit(stage, store.preferences);
           const overLimit = limit > 0 && items.length > limit;
-          const lanes = lanesFor(items);
+          const shown = limits[stage] ?? COLUMN_PAGE;
+          const lanes = lanesFor(items.length > shown ? items.slice(0, shown) : items);
 
           return (
             <section
@@ -390,11 +423,8 @@ export default function BoardView({ applications, interviewsMap, onOpen, onAdd }
                           >
                             <ApplicationCard
                               application={app}
-                              interviews={interviewsMap[app.id] || []}
-                              onClick={() => {
-                                setFocusKey(key);
-                                onOpen(app);
-                              }}
+                              interviews={interviewsMap[app.id] || NO_INTERVIEWS}
+                              onOpen={openCard}
                               compact
                             />
                             {focusKey === key && (
@@ -429,6 +459,14 @@ export default function BoardView({ applications, interviewsMap, onOpen, onAdd }
                       })}
                     </div>
                   ))
+                )}
+                {items.length > shown && (
+                  <button
+                    onClick={() => setLimits(l => ({ ...l, [stage]: shown + COLUMN_PAGE }))}
+                    className="btn-ghost btn-sm w-full !text-[11px]"
+                  >
+                    Show {Math.min(COLUMN_PAGE, items.length - shown)} more · {items.length - shown} hidden
+                  </button>
                 )}
               </div>
             </section>

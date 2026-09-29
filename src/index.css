@@ -56,6 +56,9 @@
 
   body {
     @apply bg-light-200 text-light-900 dark:bg-dark-950 dark:text-dark-50 transition-colors;
+  }
+
+  body {
     background-image:
       radial-gradient(1200px 600px at 12% -10%, rgba(255, 178, 69, 0.13), transparent 60%),
       radial-gradient(900px 500px at 105% 0%, rgba(255, 126, 126, 0.10), transparent 55%);
@@ -90,6 +93,9 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
     *, *::before, *::after {
       animation-duration: .01ms !important;
       transition-duration: .01ms !important;
@@ -177,7 +183,10 @@
   }
 
   .card {
-    @apply min-w-0 bg-light-50/90 dark:bg-dark-900/80 backdrop-blur-sm border border-light-300 dark:border-dark-700 rounded-2xl shadow-soft transition-all duration-200;
+    /* No backdrop blur: with a card per application it made scrolling stutter, and at
+       80–90% opacity the blur was invisible. Transitions name their properties so
+       layout is never animated. */
+    @apply min-w-0 bg-light-50/90 dark:bg-dark-900/80 border border-light-300 dark:border-dark-700 rounded-2xl shadow-soft transition-[background-color,border-color,box-shadow,transform,opacity] duration-200;
   }
 
   .card-hover {

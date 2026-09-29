@@ -52,13 +52,17 @@ export function useAutomationEngine() {
   const bridgeRef = useRef<AutomationBridge>({ applications, interviewsMap, updateApplication, createApplication: spawn });
   bridgeRef.current = { applications, interviewsMap, updateApplication, createApplication: spawn };
 
+  // Registered once when the engine turns on — not on every data change, which
+  // is what re-ran it (and its permission query) each time an application moved.
+  useEffect(() => {
+    if (enabled && rulesCount) void registerSync();
+  }, [enabled, rulesCount]);
+
   useEffect(() => {
     if (!enabled || !rulesCount) return;
     const run = () => void evaluateAutomations(bridgeRef.current);
     run();
     const id = window.setInterval(run, 60_000);
-
-    void registerSync();
 
     // The worker posts this when a sync event wakes it.
     const onMessage = (event: MessageEvent) => {

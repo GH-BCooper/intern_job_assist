@@ -4,6 +4,24 @@ import type { AiToolTrace } from '../store';
 
 export const MAX_TOOL_ROUNDS = 8;
 
+/** Tools that cannot be undone. */
+const DESTRUCTIVE_TOOLS = new Set(['delete_application', 'delete_automation']);
+
+const DELETE_INTENT =
+  /\b(delete|remove|erase|get rid of|drop|scrap|discard|yes|yep|yeah|yup|confirm(ed)?|go ahead|do it|proceed|sure|ok(ay)?)\b/i;
+
+/**
+ * Whether the user's own latest message asks for (or confirms) a deletion.
+ *
+ * The delete tool takes a `confirm: true` argument, but the model fills that in
+ * itself. Text the model has read through a tool — a pasted job posting, an
+ * interview note — can contain instructions, and nothing stopped it obeying one.
+ * Checking the message the *user* just typed puts the decision back with them.
+ */
+export function userAskedToDelete(latestUserMessage: string): boolean {
+  return DELETE_INTENT.test(latestUserMessage || '');
+}
+
 export function systemPrompt(ctx: {
   userName: string;
   today: string;
@@ -99,6 +117,7 @@ export async function runAgent(
 ): Promise<AgentResult> {
   const messages: ChatMessage[] = [...history];
   const traces: AiToolTrace[] = [];
+  const latestUserMessage = [...history].reverse().find(m => m.role === 'user')?.content || '';
 
   /**
    * Streams a reply when nothing more needs a tool.
@@ -155,7 +174,14 @@ export async function runAgent(
       let output: string;
       let error: string | undefined;
       try {
-        output = await executeTool(call.name, call.args, bridge);
+        if (DESTRUCTIVE_TOOLS.has(call.name) && !userAskedToDelete(latestUserMessage)) {
+          output = JSON.stringify({
+            error:
+              'Refused: the user has not asked for this deletion. Ask them in plain language first and only proceed once they say so.',
+          });
+        } else {
+          output = await executeTool(call.name, call.args, bridge);
+        }
       } catch (e) {
         error = e instanceof Error ? e.message : String(e);
         output = JSON.stringify({ error });

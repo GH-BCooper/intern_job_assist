@@ -1,9 +1,13 @@
 /**
  * Company logo resolution through keyless, free endpoints.
  *
- * Clearbit's logo API and Google's favicon service both answer on a bare
+ * Google's favicon service and DuckDuckGo's icon service both answer on a bare
  * domain with no key and no quota paperwork. Either can 404, so every consumer
  * keeps the existing gradient-initials avatar as the fallback.
+ *
+ * Clearbit's free logo endpoint used to be first in this list; it has been
+ * retired, so every card paid for one failed request before reaching a source
+ * that works.
  */
 
 /** Companies whose domain is not simply `name.com`. */
@@ -83,7 +87,7 @@ export function logoSources(companyName: string): LogoSource[] {
   const domain = guessDomain(companyName);
   if (!domain) return [];
   return [
-    { url: `https://logo.clearbit.com/${domain}`, label: 'Clearbit' },
     { url: `https://www.google.com/s2/favicons?domain=${domain}&sz=128`, label: 'Favicon' },
+    { url: `https://icons.duckduckgo.com/ip3/${domain}.ico`, label: 'DuckDuckGo' },
   ];
 }

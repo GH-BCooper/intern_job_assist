@@ -98,19 +98,30 @@ export function useAlerts(): { alerts: Alert[]; unread: number } {
 export function useNotificationEngine() {
   const store = useStore();
   const { applications } = useData();
-  const tick = useRef(0);
+  const enabled = store.preferences.notificationsEnabled;
+
+  // The latest data, read through a ref so the timer below does not have to be
+  // torn down and rebuilt on every store write (each write hands out fresh arrays).
+  const latest = useRef({ reminders: store.reminders, applications });
+  latest.current = { reminders: store.reminders, applications };
+
+  // Changes only when a reminder becomes due or is notified — the moments the
+  // engine has something new to do — instead of on every unrelated write.
+  const dueKey = store.reminders
+    .filter(r => !r.done && !r.notified && ts(r.due_at) <= Date.now())
+    .map(r => r.id)
+    .join(',');
 
   useEffect(() => {
-    if (!store.preferences.notificationsEnabled) return;
+    if (!enabled) return;
     if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
 
     const run = () => {
-      tick.current += 1;
       const nowMs = Date.now();
-      store.reminders
+      latest.current.reminders
         .filter(r => !r.done && !r.notified && ts(r.due_at) <= nowMs)
         .forEach(r => {
-          const app = applications.find(a => a.id === r.application_id);
+          const app = latest.current.applications.find(a => a.id === r.application_id);
           try {
             new Notification('InternTrack', {
               body: app ? `${r.title} — ${app.company_name}` : r.title,
@@ -127,7 +138,7 @@ export function useNotificationEngine() {
     run();
     const id = window.setInterval(run, 60_000);
     return () => window.clearInterval(id);
-  }, [store.preferences.notificationsEnabled, store.reminders, applications]);
+  }, [enabled, dueKey]);
 }
 
 export async function requestNotificationPermission(): Promise<boolean> {

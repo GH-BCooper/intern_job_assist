@@ -20,6 +20,8 @@ import { useAutomationEngine } from './hooks/useAutomations';
 import { useAutoLock } from './hooks/useAutoLock';
 import { consumeAddHash } from './lib/bookmarklet';
 import { peekUndo, runUndo } from './lib/undo';
+import { STORAGE_WARNING_EVENT } from './lib/store';
+import { toast } from './lib/uiBus';
 import LockScreen from './components/LockScreen';
 
 // Secondary pages load on demand — the dashboard is the only route most sessions need.
@@ -112,6 +114,18 @@ function UiBridge() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // Browser storage full: tell the user, once a minute at most.
+  useEffect(() => {
+    let last = 0;
+    const onWarning = (e: Event) => {
+      if (Date.now() - last < 60_000) return;
+      last = Date.now();
+      toast(String((e as CustomEvent).detail || 'Browser storage is full.'), 'error');
+    };
+    window.addEventListener(STORAGE_WARNING_EVENT, onWarning);
+    return () => window.removeEventListener(STORAGE_WARNING_EVENT, onWarning);
   }, []);
 
   /**

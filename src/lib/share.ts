@@ -149,6 +149,17 @@ export async function revokeShareLink(token: string): Promise<void> {
   }
 }
 
+/**
+ * Deletes every share link the user owns, payload and all.
+ *
+ * Revoking keeps the row (and the published snapshot inside it); a data wipe
+ * has to remove it. Quietly a no-op when the sharing migration was never applied.
+ */
+export async function deleteAllShareLinks(userId: string): Promise<void> {
+  const { error } = await supabase.from('shared_dashboards').delete().eq('user_id', userId);
+  if (error && !MISSING_TABLE.test(error.message)) throw new Error(error.message);
+}
+
 export async function refreshShareLink(token: string, payload: SharePayload): Promise<void> {
   const { error } = await supabase
     .from('shared_dashboards')

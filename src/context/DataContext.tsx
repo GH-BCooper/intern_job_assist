@@ -15,7 +15,7 @@ import { useAuth } from './AuthContext';
 import { logActivity, setStoreScope, uid } from '../lib/store';
 import { ts } from '../lib/format';
 import { onUi, toast } from '../lib/uiBus';
-import { enqueue, flush, registerRunner } from '../lib/outbox';
+import { enqueue, flush, registerRunner, setOutboxOwner } from '../lib/outbox';
 import { clearUndo } from '../lib/undo';
 
 /**
@@ -126,6 +126,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // a backstop for anything that swaps the user without going through it.
   useEffect(() => {
     setStoreScope(userId);
+    setOutboxOwner(userId);
     // An undo closure belongs to whoever was signed in when it was pushed; it
     // must not survive into another account's session.
     clearUndo();
@@ -484,6 +485,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
       throw result.error instanceof Error ? result.error : new Error(String(result.error));
     }
     setApplications(prev => prev.filter(a => a.id !== id));
+    // The database cascades these; mirror it so nothing about a deleted
+    // application (a countdown, a calendar entry) lingers until the next reload.
+    setInterviewsMap(prev => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setLearningsMap(prev => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
     logActivity(`Deleted ${target?.company_name || 'an application'}`, { kind: 'delete' });
     if (!result.ok) toast('Deletion queued — it will sync when you are back online.', 'info');
   }, [applications]);
@@ -491,26 +506,43 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const addInterviewDate = useCallback(
     async (applicationId: string, interview_date: string, label = 'Interview') => {
       if (!user) throw new Error('You must be signed in.');
-      const { data, error: err } = await supabase
-        .from('interview_dates')
-        .insert({ application_id: applicationId, user_id: user.id, interview_date, label })
-        .select()
-        .single();
-      if (err) throw new Error(err.message);
+      // The id is made here, not by the database, so a write queued offline can be
+      // shown (and given a timezone) straight away and replays as the same row.
+      const row = { id: uid(), application_id: applicationId, user_id: user.id, interview_date, label };
+      const result = await enqueue('interview_add', `Add ${label}`, { row }, async () => {
+        const { data, error: err } = await supabase.from('interview_dates').insert(row).select().single();
+        if (err) throw new Error(err.message);
+        return data as InterviewDate;
+      });
+
+      let saved: InterviewDate;
+      if (result.ok) saved = result.value;
+      else if (result.queued) {
+        saved = { ...row, created_at: new Date().toISOString() } as InterviewDate;
+        toast('Saved locally — it will sync when you are back online.', 'info');
+      } else throw result.error instanceof Error ? result.error : new Error(String(result.error));
+
       setInterviewsMap(prev => ({
         ...prev,
-        [applicationId]: [...(prev[applicationId] || []), data].sort(
+        [applicationId]: [...(prev[applicationId] || []), saved].sort(
           (a, b) => ts(a.interview_date) - ts(b.interview_date),
         ),
       }));
-      return data;
+      return saved;
     },
     [user],
   );
 
   const removeInterviewDate = useCallback(async (id: string) => {
-    const { error: err } = await supabase.from('interview_dates').delete().eq('id', id);
-    if (err) throw new Error(err.message);
+    const result = await enqueue('interview_remove', 'Remove an interview', { id }, async () => {
+      const { error: err } = await supabase.from('interview_dates').delete().eq('id', id);
+      if (err) throw new Error(err.message);
+      return true;
+    });
+    if (!result.ok && !result.queued) {
+      throw result.error instanceof Error ? result.error : new Error(String(result.error));
+    }
+    if (!result.ok) toast('Removal queued — it will sync when you are back online.', 'info');
     setInterviewsMap(prev => {
       const next: Record<string, InterviewDate[]> = {};
       Object.entries(prev).forEach(([k, list]) => {

@@ -31,17 +31,25 @@ function applyTheme(t: Theme) {
  * are read from (and written back to) the local store.
  */
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>('light');
+  // Seeded from the class the inline script in index.html already set before first
+  // paint, so React's idea of the theme matches the screen from the first render.
+  const [theme, setThemeState] = useState<Theme>(() =>
+    typeof document !== 'undefined' && document.documentElement.classList.contains('dark') ? 'dark' : 'light',
+  );
   const [presentation, setPresentation] = useState(() => {
     const p = read().preferences;
     return { accent: p.accent, highContrast: p.highContrast, fontScale: p.fontScale };
   });
 
+  // Follow the theme chosen in another tab.
   useEffect(() => {
-    const stored = localStorage.getItem('theme') as Theme | null;
-    const initial = stored || 'light';
-    setThemeState(initial);
-    applyTheme(initial);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== 'theme' || (e.newValue !== 'light' && e.newValue !== 'dark')) return;
+      setThemeState(e.newValue);
+      applyTheme(e.newValue);
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
   }, []);
 
   // The store is the source of truth, and it changes when a user signs in (the
