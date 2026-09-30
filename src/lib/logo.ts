@@ -71,7 +71,21 @@ export function guessDomain(companyName: string): string | null {
 
   if (KNOWN[raw]) return KNOWN[raw];
 
-  const cleaned = raw.replace(/[^a-z0-9 &-]/g, ' ').replace(SUFFIXES, ' ').replace(/\s+/g, ' ').trim();
+  // "Nestlé" must become "nestle", not "nestl": strip accents (and fold the few
+  // letters that do not decompose) before anything else is discarded. A name that
+  // is still not Latin afterwards (Japanese, Arabic…) has no guessable domain, and
+  // guessing from the few ASCII letters left would show some other company's logo.
+  const folded = raw
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/ø/g, 'o')
+    .replace(/æ/g, 'ae')
+    .replace(/œ/g, 'oe')
+    .replace(/ß/g, 'ss')
+    .replace(/[łŀ]/g, 'l')
+    .replace(/đ/g, 'd');
+  if (/[\u0080-￿]/.test(folded.replace(/[^\p{L}]/gu, ''))) return null;
+  const cleaned = folded.replace(/[^a-z0-9 &-]/g, ' ').replace(SUFFIXES, ' ').replace(/\s+/g, ' ').trim();
   if (!cleaned) return null;
   if (KNOWN[cleaned]) return KNOWN[cleaned];
 

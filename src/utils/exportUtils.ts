@@ -10,15 +10,9 @@ import {
   SectionType,
 } from 'docx';
 import type { Application } from '../lib/supabase';
+import { fmtLongDate } from '../lib/format';
 
-function formatDate(d: string | null): string {
-  if (!d) return '—';
-  try {
-    return new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  } catch {
-    return d;
-  }
-}
+const formatDate = (d: string | null): string => fmtLongDate(d);
 
 function appFields(app: Application): Array<{ label: string; value: string }> {
   return [

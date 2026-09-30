@@ -559,3 +559,154 @@ describe('delete_application', () => {
     expect(bridge.deleteApplication).not.toHaveBeenCalled();
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* Found by probing helpers with degenerate input                        */
+/* ------------------------------------------------------------------ */
+
+describe('guessDomain', () => {
+  it('folds accents instead of dropping the letter', async () => {
+    const { guessDomain } = await import('./logo');
+    expect(guessDomain('Nestlé')).toBe('nestle.com');
+    expect(guessDomain('Société Générale')).toBe('societegenerale.com');
+    expect(guessDomain('Ünïcode Cø')).toBe('unicode.com'); // "Co" is a company suffix, dropped on purpose
+  });
+
+  it('gives up on a non-Latin name rather than guessing from a few ASCII letters', async () => {
+    const { guessDomain } = await import('./logo');
+    expect(guessDomain('日本語会社')).toBeNull();
+    expect(guessDomain('Zoho 日本')).toBeNull();
+    expect(guessDomain('')).toBeNull();
+  });
+});
+
+describe('parseCsv delimiters', () => {
+  const NL = String.fromCharCode(10);
+
+  it('reads semicolon-separated files (Excel in most European locales)', async () => {
+    const { parseCsv } = await import('./ai/tools');
+    const rows = parseCsv(['company;role;platform', 'Stripe;Backend Intern;LinkedIn'].join(NL));
+    expect(rows).toEqual([{ company: 'Stripe', role: 'Backend Intern', platform: 'LinkedIn' }]);
+  });
+
+  it('reads tab-separated files', async () => {
+    const { parseCsv } = await import('./ai/tools');
+    const TAB = String.fromCharCode(9);
+    expect(parseCsv(['company' + TAB + 'role', 'Figma' + TAB + 'Design Intern'].join(NL))).toEqual([
+      { company: 'Figma', role: 'Design Intern' },
+    ]);
+  });
+
+  it('keeps commas inside a semicolon file, and semicolons inside quoted commas', async () => {
+    const { parseCsv } = await import('./ai/tools');
+    const rows = parseCsv(['company;notes', 'Stripe;"likes payments, and APIs"'].join(NL));
+    expect(rows[0].notes).toBe('likes payments, and APIs');
+    expect(parseCsv(['a,b', '"x;y",2'].join(NL))).toEqual([{ a: 'x;y', b: '2' }]);
+  });
+
+  it('still reads an ordinary comma file, with a BOM', async () => {
+    const { parseCsv } = await import('./ai/tools');
+    expect(parseCsv(String.fromCharCode(0xfeff) + ['company,role', 'Stripe,Backend'].join(NL))).toEqual([
+      { company: 'Stripe', role: 'Backend' },
+    ]);
+  });
+});
+
+describe('spaced-repetition review with corrupt cards', () => {
+  it('never produces NaN from a card whose numbers went missing', async () => {
+    const { review } = await import('./srs');
+    const out = review({ ease: NaN, interval: NaN, reps: NaN, lapses: NaN } as never, 4);
+    Object.values(out).forEach(v => {
+      if (typeof v === 'number') expect(Number.isFinite(v)).toBe(true);
+    });
+    expect(out.ease).toBeGreaterThanOrEqual(1.3);
+    expect(Number.isNaN(new Date(out.due_at).getTime())).toBe(false);
+  });
+
+  it('treats a grade that is not a number as a lapse', async () => {
+    const { review } = await import('./srs');
+    const out = review({ ease: 2.5, interval: 10, reps: 5, lapses: 0 }, NaN as never);
+    expect(out.reps).toBe(0);
+    expect(out.interval).toBe(1);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Imports: dates must land on the day the export says                   */
+/* ------------------------------------------------------------------ */
+
+describe('import date parsing', () => {
+  const previousTz = process.env.TZ;
+  beforeEach(() => {
+    process.env.TZ = 'America/New_York';
+  });
+  afterEach(() => {
+    if (previousTz === undefined) delete process.env.TZ;
+    else process.env.TZ = previousTz;
+  });
+
+  const dateFor = async (value: string) => {
+    const { mapRow, PRESETS } = await import('./importPresets');
+    const preset = PRESETS.find(p => p.id === 'interntrack')!;
+    return mapRow({ company_name: 'Stripe', date_applied: value }, preset).data.date_applied;
+  };
+
+  it('keeps a bare ISO date on its own day west of UTC (it used to become the day before)', async () => {
+    expect(await dateFor('2026-09-15')).toBe('2026-09-15');
+    expect(await dateFor('2026-01-01')).toBe('2026-01-01');
+  });
+
+  it('reads a slashed date day-first only when the first number cannot be a month', async () => {
+    expect(await dateFor('15/09/2026')).toBe('2026-09-15');
+    expect(await dateFor('09/15/2026')).toBe('2026-09-15');
+    expect(await dateFor('03/04/2026')).toBe('2026-03-04'); // ambiguous: month-first, as before
+  });
+
+  it('rejects dates that do not exist instead of rolling them over', async () => {
+    expect(await dateFor('31/02/2026')).toBeNull();
+    expect(await dateFor('2026-02-30')).toBeNull();
+    expect(await dateFor('not a date')).toBeNull();
+  });
+
+  it('understands written dates', async () => {
+    expect(await dateFor('Sep 15, 2026')).toBe('2026-09-15');
+  });
+
+  it('only treats a clear yes as "interview offered"', async () => {
+    const { mapRow, PRESETS } = await import('./importPresets');
+    const preset = { ...PRESETS.find(p => p.id === 'interntrack')!, map: { company_name: ['company_name'], interview_offered: ['interview'] } };
+    const flag = (v: string) => mapRow({ company_name: 'X', interview: v }, preset).data.interview_offered;
+    expect(flag('yes')).toBe(true);
+    expect(flag('TRUE')).toBe(true);
+    expect(flag('1')).toBe(true);
+    expect(flag('10')).toBe(false);
+    expect(flag('no (asked 1x)')).toBe(false);
+    expect(flag('0')).toBe(false);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+describe('long dates in PDF / Word / zip exports', () => {
+  const previousTz = process.env.TZ;
+  beforeEach(() => {
+    process.env.TZ = 'America/New_York';
+  });
+  afterEach(() => {
+    if (previousTz === undefined) delete process.env.TZ;
+    else process.env.TZ = previousTz;
+  });
+
+  it('prints the stored calendar day, not the evening before it', async () => {
+    const { fmtLongDate } = await import('./format');
+    expect(fmtLongDate('2026-09-15')).toBe('September 15, 2026');
+    expect(fmtLongDate('2026-01-01')).toBe('January 1, 2026');
+  });
+
+  it('never prints "Invalid Date" into a document', async () => {
+    const { fmtLongDate } = await import('./format');
+    expect(fmtLongDate('not a date')).toBe('—');
+    expect(fmtLongDate(null)).toBe('—');
+    expect(fmtLongDate('', '-')).toBe('-');
+  });
+});

@@ -7,7 +7,7 @@ defects the 280 existing tests could not, because jsdom has no layout, no focus
 model and no real timing. Everything below was fixed and has a regression test or an
 `npm run e2e` check behind it.
 
-Tests: 280 → 355. `npm run e2e` (new) drives the signed-in app in a real browser; `npm run e2e:monkey` throws random input at it.
+Tests: 280 → 370. `npm run e2e` (new) drives the signed-in app in a real browser; `npm run e2e:monkey` throws random input at it.
 
 ## Data loss and correctness
 
@@ -118,4 +118,21 @@ random clicks, keystrokes and form inputs, zero crashes).
   providers and Google Fonts, and a wrong one would break it. The PWA manifest no longer locks the
   installed app to portrait.
 
-Tests: 355 unit/integration, 22 e2e checks, plus the monkey run.
+## Imports, exports and small probes (last sweep)
+
+- **Imported dates were a day early.** A bare `2026-09-15` was parsed as UTC midnight, which is the
+  previous evening anywhere west of Greenwich, so importing from Huntr/Teal/a spreadsheet shifted
+  every date back a day for most of the US. `15/09/2026` was read as month 15 and dropped. Bare dates
+  are now taken at face value, a slashed date is day-first only when the first number cannot be a
+  month, and impossible dates (31 Feb) are rejected instead of rolling over.
+- **PDF / Word / zip exports had the same off-by-one** in "Date Applied", and printed "Invalid Date"
+  for a bad value. They now share `fmtLongDate`.
+- **Semicolon- and tab-separated CSVs imported as "no usable rows".** European Excel writes `;`;
+  the parser assumed commas. The delimiter is now detected from the header line.
+- **"Interview offered" matched `10` and `no (asked 1x)`** because the flag regex was unanchored.
+- **Logos for accented names guessed the wrong domain** (`Nestlé` → `nestl.com`). Accents are folded
+  first; names that are still non-Latin get no guess rather than a stranger's logo.
+- **A corrupt spaced-repetition card turned its schedule into `NaN`**, so it was never (or always)
+  due. Missing/invalid numbers now fall back to defaults.
+
+Tests: 370 unit/integration, 22 e2e checks, plus the monkey run.

@@ -31,6 +31,16 @@ export function fmtDate(value?: string | null, opts?: Intl.DateTimeFormatOptions
   return t.toLocaleDateString('en-US', opts || { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+/**
+ * "September 15, 2026" for exports. `new Date('2026-09-15')` is UTC midnight, so the
+ * PDF/Word "Date Applied" read one day early for anyone west of Greenwich, and
+ * garbage input printed "Invalid Date" into a document that gets sent to people.
+ */
+export function fmtLongDate(value?: string | null, empty = '—'): string {
+  const t = parseDate(value);
+  return t ? t.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : empty;
+}
+
 export function fmtDateTime(value?: string | null): string {
   const t = parseDate(value);
   if (!t) return '—';

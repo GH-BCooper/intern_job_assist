@@ -16,6 +16,7 @@ import type {
   InterviewDate,
   InterviewLearning,
 } from "../lib/supabase";
+import { fmtLongDate } from "../lib/format";
 
 type LearningsMap = Record<string, InterviewLearning | null | undefined>;
 
@@ -26,18 +27,7 @@ type FileMapEntry = {
   coverLetterName?: string;
 };
 
-function formatDate(d: string | null): string {
-  if (!d) return "-";
-  try {
-    return new Date(d).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-  } catch {
-    return d;
-  }
-}
+const formatDate = (d: string | null): string => fmtLongDate(d, "-");
 
 function sanitizeFileName(value: string, fallback = "file"): string {
   const cleaned = value.trim().replace(/[/\\?%*:|"<>]/g, "_");

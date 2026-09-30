@@ -29,8 +29,14 @@ export type SrsUpdate = Pick<SrsCard, 'ease' | 'interval' | 'reps' | 'lapses' | 
  * reduced ease, so repeatedly-missed cards keep coming back sooner than new ones.
  */
 export function review(card: Pick<SrsCard, 'ease' | 'interval' | 'reps' | 'lapses'>, grade: Grade, at = Date.now()): SrsUpdate {
-  const q = Math.max(0, Math.min(5, grade));
-  let { ease, interval, reps, lapses } = card;
+  // Cards can arrive from an imported workspace file, so a missing or corrupt number
+  // must not turn the whole schedule into NaN (which never comes due, or always does).
+  const finite = (n: number, fallback: number) => (Number.isFinite(n) ? n : fallback);
+  const q = Number.isFinite(grade) ? Math.max(0, Math.min(5, grade)) : 0;
+  let ease = finite(card.ease, 2.5);
+  let interval = Math.max(0, finite(card.interval, 0));
+  let reps = Math.max(0, finite(card.reps, 0));
+  let lapses = Math.max(0, finite(card.lapses, 0));
 
   ease = Math.max(MIN_EASE, ease + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02)));
 

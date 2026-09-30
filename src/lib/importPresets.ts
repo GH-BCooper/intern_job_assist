@@ -191,19 +191,43 @@ function pick(row: Record<string, string>, candidates: string[] = []): string {
   return '';
 }
 
+/** `YYYY-MM-DD` for a calendar date, or null when it does not exist (31 Feb, month 15…). */
+function ymd(year: number, month: number, day: number): string | null {
+  const probe = new Date(year, month - 1, day);
+  if (probe.getFullYear() !== year || probe.getMonth() !== month - 1 || probe.getDate() !== day) return null;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${year}-${pad(month)}-${pad(day)}`;
+}
+
+/**
+ * Turns whatever date an export contains into the app's `YYYY-MM-DD`.
+ *
+ * Two things went wrong with a plain `new Date(value)`. A bare `2026-09-15` is read
+ * as UTC midnight, which is the previous evening anywhere west of Greenwich, so an
+ * import shifted every date a day back for most of the US. And `15/09/2026` was
+ * read as month 15. Bare dates are now taken at face value, and a slashed date is
+ * day-first only when the first number cannot be a month (US month-first stays the
+ * default for the ambiguous ones).
+ */
 function normalizeDate(value: string): string | null {
-  if (!value) return null;
-  const parsed = new Date(value);
-  if (!Number.isNaN(parsed.getTime())) return toDateInput(parsed.toISOString());
-  // Formats like 12/03/2026 that Date parses inconsistently across locales.
-  const m = value.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/);
+  const v = (value || '').trim();
+  if (!v) return null;
+
+  const iso = v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (iso) return ymd(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+
+  const m = v.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/);
   if (m) {
-    const [, a, b, y] = m;
-    const year = Number(y.length === 2 ? `20${y}` : y);
-    const guess = new Date(year, Number(a) - 1, Number(b));
-    if (!Number.isNaN(guess.getTime())) return toDateInput(guess.toISOString());
+    const first = Number(m[1]);
+    const second = Number(m[2]);
+    const year = Number(m[3].length === 2 ? `20${m[3]}` : m[3]);
+    const dayFirst = first > 12 && second <= 12;
+    return dayFirst ? ymd(year, second, first) : ymd(year, first, second);
   }
-  return null;
+
+  // Anything else ("Sep 15, 2026", a full timestamp) is a real instant; its local day is what the user meant.
+  const parsed = new Date(v);
+  return Number.isNaN(parsed.getTime()) ? null : toDateInput(parsed.toISOString());
 }
 
 export type MappedRow = { data: ApplicationInsert; skipped: boolean; reason?: string };
@@ -235,7 +259,7 @@ export function mapRow(row: Record<string, string>, preset: ImportPreset): Mappe
     const value = pick(r, candidates);
     if (!value) return;
     if (field === 'date_applied') data.date_applied = normalizeDate(value);
-    else if (field === 'interview_offered') data.interview_offered = /true|yes|1/i.test(value);
+    else if (field === 'interview_offered') data.interview_offered = /^(true|yes|y|1)$/i.test(value.trim());
     else (data as unknown as Record<string, string>)[field] = value;
   });
 

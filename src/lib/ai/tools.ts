@@ -1424,7 +1424,34 @@ export function downloadText(filename: string, content: string, mime = 'text/pla
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/**
+ * The delimiter a CSV actually uses, judged from its header line.
+ *
+ * Excel in most European locales (and many exports from them) separate with `;`,
+ * and some tools use tabs. Assuming a comma turned those files into a single
+ * column, which then imported as "no usable rows".
+ */
+export function detectDelimiter(text: string): string {
+  const header = text.replace(/^\ufeff/, '').split(/\r?\n/, 1)[0] || '';
+  let best = ',';
+  let bestCount = 0;
+  for (const candidate of [',', ';', '\t']) {
+    let count = 0;
+    let quoted = false;
+    for (const ch of header) {
+      if (ch === '"') quoted = !quoted;
+      else if (!quoted && ch === candidate) count += 1;
+    }
+    if (count > bestCount) {
+      best = candidate;
+      bestCount = count;
+    }
+  }
+  return best;
+}
+
 export function parseCsv(text: string): Record<string, string>[] {
+  const delimiter = detectDelimiter(text);
   const rows: string[][] = [];
   let row: string[] = [];
   let cell = '';
@@ -1440,7 +1467,7 @@ export function parseCsv(text: string): Record<string, string>[] {
       continue;
     }
     if (ch === '"') quoted = true;
-    else if (ch === ',') {
+    else if (ch === delimiter) {
       row.push(cell);
       cell = '';
     } else if (ch === '\n' || ch === '\r') {
