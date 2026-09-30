@@ -122,6 +122,32 @@ function resolveApp(bridge: ToolBridge, ref: string): Application | null {
   return byRole || null;
 }
 
+/**
+ * Resolves an application only when the reference points at exactly one.
+ *
+ * `resolveApp` picks the first match, which is fine for reading but not for a
+ * deletion: with two applications at "Stripe" it would remove whichever came first.
+ * An id, or a name that matches exactly one record, is accepted; anything else is
+ * returned as a list of candidates for the model to disambiguate with the user.
+ */
+export function resolveAppStrict(
+  bridge: ToolBridge,
+  ref: string,
+): { app: Application | null; ambiguous: Application[] } {
+  if (!ref) return { app: null, ambiguous: [] };
+  const needle = ref.trim().toLowerCase();
+  const byId = bridge.applications.find(a => a.id === ref);
+  if (byId) return { app: byId, ambiguous: [] };
+  const exact = bridge.applications.filter(a => a.company_name.toLowerCase() === needle);
+  if (exact.length === 1) return { app: exact[0], ambiguous: [] };
+  if (exact.length > 1) return { app: null, ambiguous: exact };
+  const partial = bridge.applications.filter(
+    a => a.company_name.toLowerCase().includes(needle) || (a.role_applied_to || '').toLowerCase().includes(needle),
+  );
+  if (partial.length === 1) return { app: partial[0], ambiguous: [] };
+  return { app: null, ambiguous: partial };
+}
+
 function slim(app: Application, bridge: ToolBridge) {
   const s = read();
   const tagNames = s.applicationTags
@@ -811,7 +837,13 @@ export async function executeTool(name: string, args: Args, bridge: ToolBridge):
 
     case 'delete_application': {
       if (!bool(args, 'confirm')) return ok({ error: 'Refused: pass confirm true only after the user explicitly agreed.' });
-      const app = resolveApp(bridge, str(args, 'application'));
+      const { app, ambiguous } = resolveAppStrict(bridge, str(args, 'application'));
+      if (ambiguous.length) {
+        return ok({
+          error: 'Ambiguous: that matches more than one application, so nothing was deleted. Ask the user which one.',
+          candidates: ambiguous.slice(0, 8).map(a => ({ id: a.id, company: a.company_name, role: a.role_applied_to || null })),
+        });
+      }
       if (!app) return ok({ error: 'No application matched.' });
       await bridge.deleteApplication(app.id);
       logActivity(`AI deleted ${app.company_name}`, { actor: 'ai', kind: 'delete' });
@@ -1360,10 +1392,22 @@ const CSV_COLUMNS: (keyof Application)[] = [
   'created_at',
 ];
 
+/**
+ * Spreadsheets treat a cell that starts with = + - @ (or a tab/CR) as a formula.
+ * A company name or note that came from a pasted posting could therefore run code
+ * when an export is opened, so such cells get a leading apostrophe, which every
+ * spreadsheet shows as plain text. `parseCsv` removes it again on import.
+ */
+const FORMULA_START = /^[=+\-@\t\r]/;
+
+export function neutraliseCsvCell(value: string): string {
+  return FORMULA_START.test(value) ? `'${value}` : value;
+}
+
 export function toCsv(apps: Application[]): string {
   const esc = (v: unknown) => {
-    const s = v === null || v === undefined ? '' : String(v);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    const s = neutraliseCsvCell(v === null || v === undefined ? '' : String(v));
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const head = CSV_COLUMNS.join(',');
   const rows = apps.map(a => CSV_COLUMNS.map(c => esc(a[c])).join(','));
@@ -1417,7 +1461,9 @@ export function parseCsv(text: string): Record<string, string>[] {
   return body.map(r => {
     const obj: Record<string, string> = {};
     keys.forEach((k, i) => {
-      obj[k] = (r[i] || '').trim();
+      const cell = (r[i] || '').trim();
+      // Undo the apostrophe `toCsv` adds to formula-looking cells.
+      obj[k] = /^'[=+\-@]/.test(cell) ? cell.slice(1) : cell;
     });
     return obj;
   });

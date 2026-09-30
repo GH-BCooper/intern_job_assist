@@ -480,3 +480,82 @@ describe('stageLabel and language', () => {
     expect(stageLabel('Custom Stage', { locale: 'es' })).toBe('Custom Stage');
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* Exports must not carry spreadsheet formulas                          */
+/* ------------------------------------------------------------------ */
+
+describe('CSV export', () => {
+  it('neutralises cells a spreadsheet would run as formulas, and restores them on import', async () => {
+    const { toCsv, parseCsv } = await import('./ai/tools');
+    const hostile = '=HYPERLINK("http://evil.example","click")';
+    const csv = toCsv([
+      makeApp({ company_name: hostile, role_applied_to: '+1+1', platform_applied_on: '@SUM(A1)', salary_info: '-cmd' }),
+    ]);
+
+    // No data cell may begin with a formula character (a quoted cell begins with the quote).
+    const dataLine = csv.split(String.fromCharCode(10))[1];
+    expect(dataLine.startsWith('"\'=')).toBe(true);
+    expect(dataLine).toContain("'+1+1");
+    expect(dataLine).toContain("'@SUM(A1)");
+
+    const round = parseCsv(csv)[0];
+    expect(round.company_name).toBe(hostile);
+    expect(round.role_applied_to).toBe('+1+1');
+  });
+
+  it('leaves ordinary text alone', async () => {
+    const { neutraliseCsvCell } = await import('./ai/tools');
+    expect(neutraliseCsvCell('Stripe')).toBe('Stripe');
+    expect(neutraliseCsvCell('2026-09-30')).toBe('2026-09-30');
+    expect(neutraliseCsvCell('')).toBe('');
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* The assistant must not guess which application to delete             */
+/* ------------------------------------------------------------------ */
+
+describe('delete_application', () => {
+  const bridgeFor = (applications: ReturnType<typeof makeApp>[]) => ({
+    applications,
+    interviewsMap: {},
+    learningsMap: {},
+    createApplication: vi.fn(),
+    updateApplication: vi.fn(),
+    deleteApplication: vi.fn().mockResolvedValue(undefined),
+    addInterviewDate: vi.fn(),
+    refresh: vi.fn(),
+  });
+
+  it('refuses when the name matches more than one application', async () => {
+    const { executeTool } = await import('./ai/tools');
+    const bridge = bridgeFor([
+      makeApp({ id: 'a', company_name: 'Stripe', role_applied_to: 'Backend Intern' }),
+      makeApp({ id: 'b', company_name: 'Stripe', role_applied_to: 'Frontend Intern' }),
+    ]);
+    const out = JSON.parse(await executeTool('delete_application', { application: 'Stripe', confirm: true }, bridge));
+    expect(out.error).toMatch(/ambiguous/i);
+    expect(out.candidates).toHaveLength(2);
+    expect(bridge.deleteApplication).not.toHaveBeenCalled();
+  });
+
+  it('deletes when the reference is unambiguous, by name or by id', async () => {
+    const { executeTool } = await import('./ai/tools');
+    const bridge = bridgeFor([
+      makeApp({ id: 'a', company_name: 'Stripe' }),
+      makeApp({ id: 'b', company_name: 'Figma' }),
+    ]);
+    await executeTool('delete_application', { application: 'figma', confirm: true }, bridge);
+    expect(bridge.deleteApplication).toHaveBeenCalledWith('b');
+    await executeTool('delete_application', { application: 'a', confirm: true }, bridge);
+    expect(bridge.deleteApplication).toHaveBeenCalledWith('a');
+  });
+
+  it('still requires confirm: true', async () => {
+    const { executeTool } = await import('./ai/tools');
+    const bridge = bridgeFor([makeApp({ id: 'a', company_name: 'Stripe' })]);
+    await executeTool('delete_application', { application: 'Stripe' }, bridge);
+    expect(bridge.deleteApplication).not.toHaveBeenCalled();
+  });
+});

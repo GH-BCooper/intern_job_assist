@@ -7,7 +7,7 @@ defects the 280 existing tests could not, because jsdom has no layout, no focus
 model and no real timing. Everything below was fixed and has a regression test or an
 `npm run e2e` check behind it.
 
-Tests: 280 → 340+. `npm run e2e` (new) drives the signed-in app in a real browser; `npm run e2e:monkey` throws random input at it.
+Tests: 280 → 355. `npm run e2e` (new) drives the signed-in app in a real browser; `npm run e2e:monkey` throws random input at it.
 
 ## Data loss and correctness
 
@@ -100,4 +100,22 @@ random clicks, keystrokes and form inputs, zero crashes).
   early in the spring-forward week; comparison and week-in-review cards did not close on Escape;
   the offline pill covered the "Ask Scout" button.
 
-Tests: 340+ unit/integration, 20 e2e checks, plus the monkey run.
+## Security found late in the pass
+
+- **Stored XSS in the Markdown renderer.** It escaped `<`, `>` and `&` but not quotes, and a link URL
+  is placed inside `href="…"` afterwards, so `[x](https://a.com/"onmouseover="…)` produced a live
+  event-handler attribute. Markdown renders assistant replies, notes, briefings and imported
+  workspace data, and this app keeps AI API keys in localStorage — so a hostile string could read them.
+  Quotes are now escaped; four tests pin it (including `javascript:` links).
+- **CSV formula injection.** Exports wrote a company name like `=HYPERLINK(…)` verbatim, which
+  Excel/Sheets run when the file is opened. Such cells now get a leading apostrophe; import undoes it.
+- **The assistant deleted "the first Stripe".** With two applications at one company it picked an
+  arbitrary one. Deletion now needs an id or a name that matches exactly one record, and otherwise
+  returns the candidates to ask the user about.
+- Deployment: `vercel.json` gains `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` and a
+  `Permissions-Policy` (microphone stays allowed for dictation), long-lived caching for the hashed
+  `/assets/*`, and `no-cache` for `sw.js`. No CSP: the app legitimately talks to Supabase, several AI
+  providers and Google Fonts, and a wrong one would break it. The PWA manifest no longer locks the
+  installed app to portrait.
+
+Tests: 355 unit/integration, 22 e2e checks, plus the monkey run.

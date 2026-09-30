@@ -5,8 +5,21 @@ import { useMemo } from 'react';
  * Escapes HTML first, then applies a small safe subset of markdown.
  */
 
+/**
+ * Escapes everything that can change the structure of HTML — including quotes.
+ *
+ * Quotes matter because link URLs are placed inside `href="…"` after this runs: an
+ * unescaped `"` in `[x](https://a.com/"onmouseover="…)` closed the attribute and
+ * opened a new, live one (a stored XSS, in an app that keeps API keys in
+ * localStorage). With quotes escaped, a URL can never end its own attribute.
+ */
 function escapeHtml(s: string) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function inline(s: string) {
