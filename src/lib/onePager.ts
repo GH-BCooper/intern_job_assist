@@ -8,7 +8,8 @@
 import type { Application, InterviewDate } from './supabase';
 import type { Contact, Note, StoreShape, Task } from './store';
 import { stageOf } from './insights';
-import { fmtDate, fmtDateTime } from './format';
+import { fmtDate, fmtDateTime, ts } from './format';
+import { pdfSafe } from './pdfText';
 
 type PageState = { y: number; page: number };
 
@@ -47,11 +48,13 @@ export async function downloadOnePager(input: OnePagerInput): Promise<void> {
   };
 
   const heading = (text: string) => {
-    ensure(30);
+    // Room for the heading and at least a couple of lines, so it is never stranded
+    // alone at the foot of a page with its content on the next.
+    ensure(46);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9.5);
     doc.setTextColor(150, 130, 105);
-    doc.text(text.toUpperCase(), MARGIN, state.y);
+    doc.text(pdfSafe(text).toUpperCase(), MARGIN, state.y);
     state.y += 15;
     doc.setTextColor(35, 28, 17);
   };
@@ -60,7 +63,7 @@ export async function downloadOnePager(input: OnePagerInput): Promise<void> {
     if (!text) return;
     doc.setFont('helvetica', opts.bold ? 'bold' : 'normal');
     doc.setFontSize(opts.size ?? 10);
-    const lines = doc.splitTextToSize(text, CONTENT) as string[];
+    const lines = doc.splitTextToSize(pdfSafe(text), CONTENT) as string[];
     lines.forEach(line => {
       ensure(14);
       doc.text(line, MARGIN, state.y);
@@ -76,11 +79,11 @@ export async function downloadOnePager(input: OnePagerInput): Promise<void> {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
       doc.setTextColor(124, 104, 81);
-      doc.text(label, MARGIN, state.y);
+      doc.text(pdfSafe(label), MARGIN, state.y);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(10);
       doc.setTextColor(35, 28, 17);
-      const lines = doc.splitTextToSize(value, CONTENT - 130) as string[];
+      const lines = doc.splitTextToSize(pdfSafe(value), CONTENT - 130) as string[];
       lines.forEach((line, i) => {
         if (i > 0) {
           ensure(13);
@@ -102,22 +105,29 @@ export async function downloadOnePager(input: OnePagerInput): Promise<void> {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(22);
   doc.setTextColor(35, 28, 17);
-  doc.text(app.company_name || 'Application', MARGIN, state.y);
-  state.y += 22;
+  // Long names are wrapped: a single unwrapped line ran off the right edge of the page.
+  (doc.splitTextToSize(pdfSafe(app.company_name) || 'Application', CONTENT) as string[]).slice(0, 3).forEach(line => {
+    doc.text(line, MARGIN, state.y);
+    state.y += 26;
+  });
+  state.y -= 4;
 
   if (app.role_applied_to) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(12.5);
     doc.setTextColor(124, 104, 81);
-    doc.text(app.role_applied_to, MARGIN, state.y);
-    state.y += 18;
+    (doc.splitTextToSize(pdfSafe(app.role_applied_to), CONTENT) as string[]).slice(0, 3).forEach(line => {
+      doc.text(line, MARGIN, state.y);
+      state.y += 16;
+    });
+    state.y += 2;
   }
 
   const stage = stageOf(app, input.store.stageOverrides);
   doc.setFontSize(9.5);
   doc.setTextColor(150, 130, 105);
   doc.text(
-    [stage, app.response_status, app.platform_applied_on].filter(Boolean).join('  ·  '),
+    doc.splitTextToSize(pdfSafe([stage, app.response_status, app.platform_applied_on].filter(Boolean).join('  ·  ')), CONTENT) as string[],
     MARGIN,
     state.y,
   );
@@ -157,9 +167,11 @@ export async function downloadOnePager(input: OnePagerInput): Promise<void> {
 
   if (input.interviews.length) {
     heading('Interview rounds');
-    input.interviews.forEach(iv => {
-      body(`${iv.label || 'Interview'} — ${fmtDateTime(iv.interview_date)}`, { gap: 2 });
-    });
+    [...input.interviews]
+      .sort((a, b) => ts(a.interview_date) - ts(b.interview_date))
+      .forEach(iv => {
+        body(`${iv.label || 'Interview'} — ${fmtDateTime(iv.interview_date)}`, { gap: 2 });
+      });
     state.y += 6;
   }
 
@@ -223,13 +235,21 @@ export async function downloadOnePager(input: OnePagerInput): Promise<void> {
     doc.setFontSize(8);
     doc.setTextColor(170, 155, 135);
     doc.text(
-      `${input.ownerName ? `${input.ownerName} · ` : ''}InternTrack brief · ${fmtDate(new Date().toISOString())}`,
+      pdfSafe(`${input.ownerName ? `${input.ownerName} · ` : ''}InternTrack brief · ${fmtDate(new Date().toISOString())}`),
       MARGIN,
       HEIGHT - 24,
     );
     if (pages > 1) doc.text(`${i} / ${pages}`, WIDTH - MARGIN, HEIGHT - 24, { align: 'right' });
   }
 
-  const safe = (app.company_name || 'application').replace(/[^\w.-]+/g, '-').toLowerCase();
+  // Accents are folded ("Nestlé" → nestle) and stray dashes trimmed, so a name in a script
+  // the pattern cannot keep no longer produces a file called "-brief.pdf".
+  const safe =
+    (app.company_name || '')
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^\w.-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .toLowerCase() || 'application';
   doc.save(`${safe}-brief.pdf`);
 }

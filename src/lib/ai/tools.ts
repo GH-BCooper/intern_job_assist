@@ -1111,8 +1111,8 @@ export async function executeTool(name: string, args: Args, bridge: ToolBridge):
       if (!apps.length) return ok({ error: 'Nothing to export yet.' });
       if (format === 'pdf' || format === 'docx') {
         const mod = await import('../../utils/exportUtils');
-        if (format === 'pdf') mod.exportAllPDF(apps);
-        else await mod.exportAllDocx(apps);
+        if (format === 'pdf') mod.exportAllPDF(apps, bridge.interviewsMap, bridge.learningsMap);
+        else await mod.exportAllDocx(apps, bridge.interviewsMap, bridge.learningsMap);
       }
       else if (format === 'csv') downloadText('interntrack.csv', toCsv(apps), 'text/csv');
       else downloadText('interntrack.json', JSON.stringify(apps, null, 2), 'application/json');

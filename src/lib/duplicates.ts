@@ -7,9 +7,11 @@ import type { Application } from './supabase';
 
 function clean(value: string): string {
   return (value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '') // "Zürich" and "Zurich" are the same company
     .toLowerCase()
     .replace(/\b(inc|llc|ltd|limited|corp|corporation|co|gmbh|plc|pvt|private|technologies|technology|labs|group)\b/g, '')
-    .replace(/[^a-z0-9 ]/g, ' ')
+    .replace(/[^\p{L}\p{N} ]/gu, ' ') // keep non-Latin scripts instead of erasing them
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -21,19 +23,39 @@ function trigrams(value: string): Set<string> {
   return out;
 }
 
+type Prepared = { text: string; grams: Set<string> };
+
+/**
+ * Normalising and trigramming a name is the expensive part of a comparison, and
+ * `findDuplicatePairs` compares every application with every other — 1,000 of them
+ * spent ~1.5 s re-preparing the same strings a million times. Each distinct string is
+ * now prepared once (the cache is emptied when it grows large, so it cannot leak).
+ */
+const PREPARED = new Map<string, Prepared>();
+const PREPARED_LIMIT = 4000;
+
+function prepare(value: string): Prepared {
+  const key = value || '';
+  const hit = PREPARED.get(key);
+  if (hit) return hit;
+  if (PREPARED.size >= PREPARED_LIMIT) PREPARED.clear();
+  const text = clean(key);
+  const made = { text, grams: trigrams(text) };
+  PREPARED.set(key, made);
+  return made;
+}
+
 /** Dice coefficient over character trigrams: 0 (nothing alike) to 1 (identical). */
 export function similarity(a: string, b: string): number {
-  const x = clean(a);
-  const y = clean(b);
-  if (!x || !y) return 0;
-  if (x === y) return 1;
-  const ta = trigrams(x);
-  const tb = trigrams(y);
+  const x = prepare(a);
+  const y = prepare(b);
+  if (!x.text || !y.text) return 0;
+  if (x.text === y.text) return 1;
   let shared = 0;
-  ta.forEach(t => {
-    if (tb.has(t)) shared += 1;
+  x.grams.forEach(t => {
+    if (y.grams.has(t)) shared += 1;
   });
-  return (2 * shared) / (ta.size + tb.size);
+  return (2 * shared) / (x.grams.size + y.grams.size);
 }
 
 export type DuplicateHit = { application: Application; score: number; reason: string };

@@ -710,3 +710,64 @@ describe('long dates in PDF / Word / zip exports', () => {
     expect(fmtLongDate('', '-')).toBe('-');
   });
 });
+
+/* ------------------------------------------------------------------ */
+
+describe('duplicate detection', () => {
+  it('treats accented and unaccented spellings as the same company', async () => {
+    const { similarity } = await import('./duplicates');
+    expect(similarity('Zürich Insurance', 'Zurich Insurance')).toBe(1);
+    expect(similarity('Nestlé', 'Nestle Inc.')).toBe(1);
+  });
+
+  it('does not throw non-Latin names away (they used to compare as 0 with themselves)', async () => {
+    const { similarity } = await import('./duplicates');
+    expect(similarity('株式会社ソニー', '株式会社ソニー')).toBe(1);
+    expect(similarity('株式会社ソニー', 'トヨタ自動車')).toBeLessThan(0.5);
+  });
+
+  it('finds pairs across a large tracker quickly', async () => {
+    const { findDuplicatePairs } = await import('./duplicates');
+    const apps = Array.from({ length: 600 }, (_, i) =>
+      makeApp({ id: `a${i}`, company_name: `Company ${i % 300} Systems`, role_applied_to: `Engineer ${i}` }),
+    );
+    const started = performance.now();
+    const groups = findDuplicatePairs(apps);
+    expect(groups.length).toBeGreaterThan(0);
+    // Was ~1.5 s per 1,000 applications; a generous ceiling keeps this stable on slow CI.
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+describe('resume ↔ job matching', () => {
+  it('reads accented words as the words they are', async () => {
+    const { tokenize } = await import('./match');
+    expect(tokenize('Résumé and café experience')).toEqual(expect.arrayContaining(['resume', 'cafe']));
+    // Deleting the accented letters used to leave "r" and "sum" behind as keywords.
+    expect(tokenize('Résumé')).not.toContain('sum');
+  });
+
+  it('still scores a posting written in another script instead of calling it empty', async () => {
+    const { matchResumeToJd, matchVerdict } = await import('./match');
+    const result = matchResumeToJd('Python 開発 経験', 'Python 開発 経験 必須');
+    expect(result.jdTermCount).toBeGreaterThan(0);
+    expect(matchVerdict(result)).not.toMatch(/Paste a job description/);
+  });
+
+  it('does not treat "3+ years" or "1.5" as skills the resume lacks', async () => {
+    const { tokenize } = await import('./match');
+    const tokens = tokenize('3+ years of React, 1.5 to 2-4 yrs, 2026');
+    expect(tokens).toContain('react');
+    expect(tokens.some(t => !/\p{L}/u.test(t))).toBe(false);
+  });
+
+  it('counts a repeated phrase every time and only as a whole word', async () => {
+    const { tokenize } = await import('./match');
+    const tokens = tokenize('machine learning, more machine learning and machine learning');
+    expect(tokens.filter(t => t === 'machine-learning')).toHaveLength(3);
+    expect(tokenize('a contest driven culture')).not.toContain('test-driven');
+    expect(tokenize('test driven development')).toContain('test-driven');
+  });
+});

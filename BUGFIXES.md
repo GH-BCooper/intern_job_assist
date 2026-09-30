@@ -7,7 +7,7 @@ defects the 280 existing tests could not, because jsdom has no layout, no focus
 model and no real timing. Everything below was fixed and has a regression test or an
 `npm run e2e` check behind it.
 
-Tests: 280 → 370. `npm run e2e` (new) drives the signed-in app in a real browser; `npm run e2e:monkey` throws random input at it.
+Tests: 280 → 393. `npm run e2e` (new) drives the signed-in app in a real browser; `npm run e2e:monkey` throws random input at it.
 
 ## Data loss and correctness
 
@@ -135,4 +135,26 @@ random clicks, keystrokes and form inputs, zero crashes).
 - **A corrupt spaced-repetition card turned its schedule into `NaN`**, so it was never (or always)
   due. Missing/invalid numbers now fall back to defaults.
 
-Tests: 370 unit/integration, 22 e2e checks, plus the monkey run.
+## Exports and matching (final sweep)
+
+- **Long fields were cut off at the bottom of PDF pages.** Both PDF writers drew a whole field in one
+  call and jsPDF never paginates, so a long list of interview questions simply ran off the page and
+  was lost. Fields now flow across pages, with the footer on each.
+- **"Export PDF" on the detail page left out the role, platform, interview rounds and learnings**, and
+  the Word export collapsed multi-line answers into one line. The two near-duplicate exporters are now
+  one shared builder (`src/utils/applicationDocument.ts`), used by the detail page, the assistant and
+  the zip bundles. Interview rounds print with their time of day.
+- **Characters jsPDF's built-in fonts cannot draw** (emoji, Polish "Ł", CJK) came out as garbage in PDFs
+  and the one-pager; they now print as `?`, and accents fold to plain letters (`pdfSafe`).
+- **One-pager brief:** long company/role names wrapped instead of running off the page, interview
+  rounds sorted by date, headings no longer stranded at the foot of a page, and a non-Latin company
+  name no longer produces a file called `-brief.pdf`.
+- **Duplicate detection** took ~1.5 s for 1,000 applications (now ~0.2 s) and treated `Zürich`/`Zurich`
+  and any non-Latin name as different; both fixed.
+- **Resume ↔ job matching** split `résumé` into `r sum`, scored a posting in another script as "empty",
+  counted `3+` from "3+ years" as a missing skill, and found `test driven` inside `contest driven`.
+
+Known limit: PDFs use jsPDF's built-in fonts, so non-Latin text shows as `?` there; Word, CSV and JSON
+exports carry full Unicode. Embedding a font would fix it at the cost of a much larger download.
+
+Tests: 393 unit/integration, 23 e2e checks (one downloads and inspects a real PDF), plus the monkey run.

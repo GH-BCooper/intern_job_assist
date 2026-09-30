@@ -76,7 +76,7 @@ Every layer runs on a permanent free tier — Vercel Hobby, the Supabase free ti
 
 ### Build Tools
 - **Vite** - Build tool & dev server
-- **Vitest + Testing Library** - 370 tests, plus a real-browser end-to-end run
+- **Vitest + Testing Library** - 393 tests, plus a real-browser end-to-end run
 - **ESLint** - Code linting
 - **PostCSS + Autoprefixer** - CSS processing
 
@@ -122,7 +122,7 @@ The app will be available at `http://localhost:5173`
 - `npm run preview` - Preview production build locally (port 4173)
 - `npm run lint` - Run ESLint
 - `npm run typecheck` - Run TypeScript type checking
-- `npm test` - Run the test suite (370 tests)
+- `npm test` - Run the test suite (393 tests)
 - `npm run test:coverage` - Tests with a coverage report
 - `npm run test:all` - typecheck + lint + tests + build, in that order
 - `npm run smoke` - Drive the built app in your installed Chrome (run `npm run preview` first)
@@ -234,7 +234,7 @@ src/
 │   └── supabase.ts           # client, types, storage helpers
 ├── utils/                    # export, pdf and zip helpers
 ├── App.tsx  main.tsx  index.css
-└── *.test.ts(x)              # 370 tests, colocated with what they cover
+└── *.test.ts(x)              # 393 tests, colocated with what they cover
 
 extension/                    # unpacked MV3 "Add to InternTrack" extension
 supabase/

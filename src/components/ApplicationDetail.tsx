@@ -904,7 +904,7 @@ export default function ApplicationDetail({ application: app, onClose, onEdit, o
                 onClick={async () => {
                   try {
                     const { exportSinglePDF } = await import('../utils/exportUtils');
-                    exportSinglePDF(app);
+                    exportSinglePDF(app, interviews, learnings);
                   } catch {
                     toast('Could not build the PDF.', 'error');
                   }

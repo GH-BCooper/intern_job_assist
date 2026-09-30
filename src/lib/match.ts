@@ -45,9 +45,14 @@ const PHRASES = [
 
 export function normalize(text: string): string {
   return (text || '')
+    .normalize('NFKD')
+    // "résumé" must read as "resume"; deleting the accented letters split it into "r sum".
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[‘’]/g, "'")
-    .replace(/[^a-z0-9+#./ -]+/g, ' ')
+    // Letters from any script survive, so a posting in German or Japanese is still scored
+    // rather than reduced to nothing (which used to read "Paste a job description").
+    .replace(/[^\p{L}\p{N}+#./ -]+/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -68,15 +73,20 @@ export function tokenize(text: string): string[] {
   const found: string[] = [];
   let rest = normalized;
   PHRASES.forEach(phrase => {
-    if (rest.includes(phrase)) {
-      found.push(phrase.replace(/ /g, '-'));
-      rest = rest.split(phrase).join(' ');
+    // Whole words only ("test driven" must not be found inside "contest driven"), and every
+    // occurrence counts: a posting that says "machine learning" five times leans on it.
+    const pattern = new RegExp(String.raw`(^|[^\p{L}\p{N}])${phrase}(?![\p{L}\p{N}])`, 'gu');
+    const count = (rest.match(pattern) || []).length;
+    if (count) {
+      for (let i = 0; i < count; i += 1) found.push(phrase.replace(/ /g, '-'));
+      rest = rest.replace(pattern, '$1 ');
     }
   });
   rest
     .split(' ')
     .map(w => w.replace(/^[-.]+|[-.]+$/g, ''))
-    .filter(w => w.length > 1 && !STOPWORDS.has(w) && !/^\d+$/.test(w))
+    // A keyword needs a letter: "3+" (from "3+ years") or "1.5" are not skills a resume can lack.
+    .filter(w => w.length > 1 && !STOPWORDS.has(w) && /\p{L}/u.test(w))
     .forEach(w => found.push(stem(w)));
   return found;
 }

@@ -229,6 +229,24 @@ async function waitForServer() {
       assert((await page.locator('[aria-label$="application"]').count()) === 1, 'Escape also closed the panel behind it');
     });
 
+    await check('Export PDF downloads a real PDF that includes the role and interview rounds', async () => {
+      await go(page, '/dashboard');
+      await page.waitForSelector('[aria-label^="Pipeline board"]');
+      await page.locator('[role="button"]:has-text("Backend Engineering Intern")').first().click();
+      await page.waitForSelector('[aria-label$="application"]');
+      const [download] = await Promise.all([
+        page.waitForEvent('download', { timeout: 20000 }),
+        page.getByRole('button', { name: 'Export PDF' }).click(),
+      ]);
+      const bytes = fs.readFileSync(await download.path());
+      const text = bytes.toString('latin1');
+      assert(text.startsWith('%PDF'), 'the download is not a PDF');
+      assert(text.includes('ROLE APPLIED TO'), 'the role field is missing from the PDF');
+      assert(text.includes('Backend Engineering Intern'), 'the role is missing from the PDF');
+      assert(/INTERVIEW DATES/.test(text), 'the interview rounds are missing from the PDF');
+      return `${download.suggestedFilename()}, ${Math.round(bytes.length / 1024)} KB`;
+    });
+
     /* ------------------------------- phone ------------------------------- */
 
     const phone = await newSession({ width: 390, height: 844 });
